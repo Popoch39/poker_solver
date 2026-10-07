@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+nitro-simulator.workspace = true
 nitro-solver.workspace = true
 
 [lints]
