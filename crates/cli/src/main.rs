@@ -1,8 +1,12 @@
 //! `nitro`: command-line entry point of the Expresso Nitro study tool.
 //!
-//! A thin layer: it parses arguments, calls the solver's public interface and
-//! formats the result. No poker logic lives here.
+//! A thin layer: it parses arguments, calls the public interface of the
+//! solver or the hand-history parser and formats the result. No poker logic
+//! lives here.
 
+mod hh;
+
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -32,15 +36,33 @@ enum Command {
         #[arg(long, requires = "hand")]
         node: Option<Node>,
     },
+    /// Parse Winamax Expresso Nitro hand histories and summaries, and report
+    /// what was read and what was not.
+    Hh {
+        /// Hand-history or summary files, or folders searched for `.txt` files.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+    },
 }
 
 fn main() -> ExitCode {
-    let Command::Solve {
-        stacks,
-        iterations,
-        hand,
-        node,
-    } = Cli::parse().command;
+    match Cli::parse().command {
+        Command::Solve {
+            stacks,
+            iterations,
+            hand,
+            node,
+        } => solve_command(stacks, iterations, hand, node),
+        Command::Hh { paths } => hh::run(&paths),
+    }
+}
+
+fn solve_command(
+    stacks: Vec<f64>,
+    iterations: u32,
+    hand: Option<HandClass>,
+    node: Option<Node>,
+) -> ExitCode {
     let spot = match stacks[..] {
         [sb, bb] => Spot::heads_up(sb, bb).map_err(|err| err.to_string()),
         _ => Err(format!(
