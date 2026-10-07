@@ -2,7 +2,8 @@
 //!
 //! Seats are fixed so that a seat number reads as a position: 1 is the BTN,
 //! 2 the SB and 3 the BB. Heads-up, seat 2 is both the button and the SB.
-//! Blinds are 10/20 and every player is named after their seat.
+//! Blinds are 10/20 and every player but the account owner is named after
+//! their seat.
 
 use chrono::DateTime;
 use nitro_hh::{Action, ActionKind, Card, Hand, Player, Street};
@@ -10,6 +11,9 @@ use nitro_hh::{Action, ActionKind, Card, Hand, Player, Street};
 pub const BTN: u8 = 1;
 pub const SB: u8 = 2;
 pub const BB: u8 = 3;
+
+/// Pseudo of the account owner set by [`HandBuilder::hero`].
+pub const HERO: &str = "Zorglub";
 
 const SMALL_BLIND: u32 = 10;
 const BIG_BLIND: u32 = 20;
@@ -126,9 +130,16 @@ impl HandBuilder {
         self
     }
 
-    /// The account owner sits at `seat` and is dealt `cards`.
-    pub fn hero(mut self, seat: u8, cards: &str) -> HandBuilder {
-        self.player(seat).cards = Some(parse_cards(cards));
+    /// The account owner, named [`HERO`], sits at `seat` and is dealt `cards`.
+    pub fn hero(self, seat: u8, cards: &str) -> HandBuilder {
+        self.account_owner(seat, HERO, cards)
+    }
+
+    /// The account owner of the history is `name`, at `seat`, dealt `cards`.
+    pub fn account_owner(mut self, seat: u8, name: &str, cards: &str) -> HandBuilder {
+        let player = self.player(seat);
+        player.name = name.into();
+        player.cards = Some(parse_cards(cards));
         self.hand.hero = Some(seat);
         self
     }

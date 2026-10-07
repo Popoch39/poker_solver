@@ -1058,6 +1058,9 @@ dependencies = [
  "chrono",
  "nitro-hh",
  "nitro-solver",
+ "rand",
+ "rayon",
+ "rs_poker",
 ]
 
 [[package]]

@@ -8,7 +8,7 @@ use crate::bucket::StackBucket;
 use crate::stats::NodeStats;
 
 /// The push/fold nodes in the order they are played.
-const TREE_ORDER: [Node; 6] = [
+pub(crate) const TREE_ORDER: [Node; 6] = [
     Node::BtnOpen,
     Node::SbVsBtnPush,
     Node::SbOpen,
