@@ -5,6 +5,7 @@
 //! No poker logic lives here.
 
 mod hh;
+mod leaks;
 mod population;
 mod simulate;
 
@@ -69,6 +70,9 @@ enum Command {
     /// Aggregate hand histories into the population model: action
     /// frequencies per push/fold node and stack bucket, with sample sizes.
     Population(population::Args),
+    /// Compare the account owner's frequencies to the equilibrium, node by
+    /// node, sorted by the chips each leak is estimated to cost.
+    Leaks(leaks::Args),
 }
 
 fn main() -> ExitCode {
@@ -84,6 +88,7 @@ fn main() -> ExitCode {
         Command::Simulate(args) => simulate::run(&args),
         Command::Hh { paths, ohh } => hh::run(&paths, ohh.as_deref()),
         Command::Population(args) => population::run(&args),
+        Command::Leaks(args) => leaks::run(&args),
     }
 }
 

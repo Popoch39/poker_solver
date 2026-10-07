@@ -92,7 +92,8 @@ impl LeakReport {
     /// stack bucket met is compared to one spot, solved once, where every
     /// player has the bucket's representative stack: its middle (1.5 BB for
     /// the shortest bucket, so that the BB still decides, and 20 BB above
-    /// 15 BB).
+    /// 15 BB). Heads-up hands are compared to that 3-max spot once the BTN
+    /// has folded, which the BTN's lack of a blind makes a close stand-in.
     pub fn build<'a>(
         hands: impl IntoIterator<Item = &'a Hand>,
         hero: &str,
