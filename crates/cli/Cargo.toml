@@ -1,0 +1,18 @@
+[package]
+name = "nitro-cli"
+description = "Command-line entry point of the Expresso Nitro study tool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "nitro"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+nitro-solver.workspace = true
+
+[lints]
+workspace = true
