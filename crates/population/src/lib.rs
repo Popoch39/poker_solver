@@ -18,12 +18,18 @@
 //! - Limps, raises short of all-in and what follows them, and every
 //!   postflop decision, are counted apart in [`OffTree`]. The decisions
 //!   before a hand leaves the tree still count at their nodes.
+//!
+//! [`LeakReport::build`] compares the hero's model to the equilibrium of the
+//! solver, node by node, with the chips each deviation is estimated to cost.
 
 mod bucket;
+mod ev;
+mod leak;
 mod model;
 mod stats;
 
 pub use bucket::StackBucket;
+pub use leak::{Leak, LeakOptions, LeakReport};
 pub use model::{OffTree, OffTreeAction, Players, PopulationModel};
 pub use nitro_solver::{Action, HandClass, Node, Position};
 pub use stats::{KnownHands, NodeStats};

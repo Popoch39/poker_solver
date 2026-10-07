@@ -9,6 +9,9 @@ publish.workspace = true
 [dependencies]
 nitro-hh.workspace = true
 nitro-solver.workspace = true
+rand.workspace = true
+rayon.workspace = true
+rs_poker.workspace = true
 
 [dev-dependencies]
 chrono.workspace = true

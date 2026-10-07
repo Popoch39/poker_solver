@@ -104,7 +104,7 @@ impl KnownHands {
     }
 }
 
-fn grid_index(class: HandClass) -> usize {
+pub(crate) fn grid_index(class: HandClass) -> usize {
     let (row, col) = class.grid_position();
     row * 13 + col
 }
