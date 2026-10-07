@@ -4,7 +4,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use rand::{Rng, RngExt};
-pub use rs_poker::core::Card;
+pub use rs_poker::core::{Card, Suit, Value};
 
 /// Who plays a seat: a bot, a solver strategy, a population model, or a
 /// human through a client.
@@ -31,6 +31,10 @@ pub enum Decision {
     Call,
     /// Put the whole stack in.
     AllIn,
+}
+
+impl Decision {
+    pub const ALL: [Decision; 3] = [Self::Fold, Self::Call, Self::AllIn];
 }
 
 /// Table position. Heads-up, the button posts the small blind and is
@@ -71,6 +75,28 @@ pub struct SeatView {
     pub to_call: f32,
     /// The players dealt in this hand, in table-seat order.
     pub players: Vec<PlayerView>,
+}
+
+impl SeatView {
+    /// The decisions that do something different from each other, in
+    /// [`Decision::ALL`] order: fold only when facing a bet, and all-in only
+    /// when it puts in more than a call against someone who can still call.
+    pub fn legal_decisions(&self) -> Vec<Decision> {
+        let me = self.players.iter().find(|p| p.seat == self.seat);
+        let stack = me.map_or(0.0, |p| p.stack);
+        let someone_can_call = self
+            .players
+            .iter()
+            .any(|p| p.seat != self.seat && !p.folded && !p.all_in);
+        Decision::ALL
+            .into_iter()
+            .filter(|d| match d {
+                Decision::Fold => self.to_call > 0.0,
+                Decision::Call => true,
+                Decision::AllIn => stack > self.to_call && someone_can_call,
+            })
+            .collect()
+    }
 }
 
 /// Public information about one player in the hand.
