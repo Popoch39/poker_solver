@@ -463,6 +463,7 @@ impl NitroGame {
 
     fn finish_hand(&mut self) {
         let hand = self.hand.as_mut().expect("a hand was played");
+        settle_odd_chips(&mut hand.state);
         let alive = &hand.table;
         for (i, &seat) in alive.iter().enumerate() {
             self.stacks[seat] = hand.state.stacks[i];
@@ -511,6 +512,28 @@ impl NitroGame {
             stacks: self.stacks,
             eliminated,
         });
+    }
+}
+
+/// Rounds a finished hand's winnings to whole chips: the arena splits a tied
+/// pot evenly, halves and thirds of chips included, where a real table
+/// gives each winner whole chips and the odd ones, one each, to the winners
+/// first clockwise from the button. Hand histories need whole chips too.
+fn settle_odd_chips(state: &mut GameState) {
+    // f32 thirds of a pot are off by a few ulps.
+    const EPSILON: f32 = 1e-3;
+    let n = state.num_players;
+    let won: Vec<f32> = (0..n).map(|i| state.player_winnings[i]).collect();
+    let whole: Vec<f32> = won.iter().map(|w| (w + EPSILON).floor()).collect();
+    let mut odd_chips = (won.iter().sum::<f32>() - whole.iter().sum::<f32>()).round();
+    for i in (1..=n).map(|k| (state.dealer_idx + k) % n) {
+        let mut settled = whole[i];
+        if odd_chips > 0.0 && won[i] - whole[i] > EPSILON {
+            settled += 1.0;
+            odd_chips -= 1.0;
+        }
+        state.stacks[i] += settled - won[i];
+        state.player_winnings[i] = settled;
     }
 }
 
