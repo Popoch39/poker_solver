@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 
 use async_trait::async_trait;
-use rand::SeedableRng;
 use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
 use rs_poker::arena::action::AgentAction;
 use rs_poker::arena::game_state::Round;
 use rs_poker::arena::{Agent, GameState, GameStateBuilder, HoldemSimulationBuilder};
@@ -57,7 +57,7 @@ impl NitroGame {
     /// A new game; `seed` decides the first button and every card dealt.
     pub fn new(structure: Structure, seats: [Arc<dyn SeatStrategy>; SEATS], seed: u64) -> Self {
         let mut rng = StdRng::seed_from_u64(seed);
-        let button = rand::RngExt::random_range(&mut rng, 0..SEATS);
+        let button = rng.random_range(0..SEATS);
         Self {
             stacks: [structure.starting_stack as f32; SEATS],
             structure,
@@ -164,7 +164,7 @@ impl NitroGame {
             let start = |s| stacks[alive.iter().position(|&x| x == s).unwrap()];
             start(a).total_cmp(&start(b))
         });
-        let mut next_place = (alive.len()) as u8;
+        let mut next_place = alive.len() as u8;
         for &seat in &eliminated {
             self.places[seat] = Some(next_place);
             next_place -= 1;
