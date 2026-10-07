@@ -4,6 +4,7 @@
 //! solver, the simulator or the hand-history parser and formats the result.
 //! No poker logic lives here.
 
+mod exploit;
 mod hh;
 mod population;
 mod simulate;
@@ -69,6 +70,10 @@ enum Command {
     /// Aggregate hand histories into the population model: action
     /// frequencies per push/fold node and stack bucket, with sample sizes.
     Population(population::Args),
+    /// Lock the population's well-sampled nodes into a spot and re-solve the
+    /// hero's: equilibrium and exploit ranges side by side, with the gain
+    /// against the population and the cost against the equilibrium.
+    Exploit(exploit::Args),
 }
 
 fn main() -> ExitCode {
@@ -84,6 +89,7 @@ fn main() -> ExitCode {
         Command::Simulate(args) => simulate::run(&args),
         Command::Hh { paths, ohh } => hh::run(&paths, ohh.as_deref()),
         Command::Population(args) => population::run(&args),
+        Command::Exploit(args) => exploit::run(&args),
     }
 }
 
@@ -95,26 +101,14 @@ fn run_solve(
     node: Option<Node>,
     csv: Option<PathBuf>,
 ) -> ExitCode {
-    let spot = match stacks[..] {
-        [btn, sb, bb] => Spot::three_max(btn, sb, bb).map_err(|err| err.to_string()),
-        [sb, bb] => Spot::heads_up(sb, bb).map_err(|err| err.to_string()),
-        _ => Err(format!(
-            "--stacks takes two or three stacks (BTN,SB,BB or SB,BB), got {}",
-            stacks.len()
-        )),
-    };
-    let spot = match spot {
+    let spot = match parse_spot(&stacks) {
         Ok(spot) => spot,
         Err(err) => {
             eprintln!("error: {err}");
             return ExitCode::from(2);
         }
     };
-    let options = SolveOptions {
-        iterations,
-        target_exploitability: (target > 0.0).then_some(target / 1000.0),
-    };
-    let solution = solve(&spot, &options);
+    let solution = solve(&spot, &solve_options(iterations, target));
     if let Some(path) = csv {
         let written = File::create(&path)
             .map(BufWriter::new)
@@ -140,6 +134,26 @@ fn run_solve(
         None => print_report(&solution),
     }
     ExitCode::SUCCESS
+}
+
+/// The spot of `--stacks`: BTN,SB,BB for 3-max, SB,BB for heads-up.
+fn parse_spot(stacks: &[f64]) -> Result<Spot, String> {
+    match stacks[..] {
+        [btn, sb, bb] => Spot::three_max(btn, sb, bb).map_err(|err| err.to_string()),
+        [sb, bb] => Spot::heads_up(sb, bb).map_err(|err| err.to_string()),
+        _ => Err(format!(
+            "--stacks takes two or three stacks (BTN,SB,BB or SB,BB), got {}",
+            stacks.len()
+        )),
+    }
+}
+
+/// `--iterations` and `--target` (in mBB per hand, 0 for none).
+fn solve_options(iterations: u32, target: f64) -> SolveOptions {
+    SolveOptions {
+        iterations,
+        target_exploitability: (target > 0.0).then_some(target / 1000.0),
+    }
 }
 
 fn print_hand(solution: &Solution, node: Node, hand: HandClass) {
@@ -194,11 +208,19 @@ fn print_report(solution: &Solution) {
 }
 
 fn print_grid(solution: &Solution, node: Node, action: Action) {
+    for line in grid(solution, node, action) {
+        println!("{line}");
+    }
+}
+
+/// The 13×13 grid of `action`'s frequency at `node`, in percent, one string
+/// per line: a header of ranks, then one row per rank.
+fn grid(solution: &Solution, node: Node, action: Action) -> Vec<String> {
     const RANKS: [char; 13] = [
         'A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2',
     ];
     let header: String = RANKS.iter().map(|r| format!("{r:>4}")).collect();
-    println!("   {header}");
+    let mut lines = vec![format!("   {header}")];
     for (row, rank) in RANKS.iter().enumerate() {
         let cells: String = (0..13)
             .map(|col| {
@@ -215,6 +237,7 @@ fn print_grid(solution: &Solution, node: Node, action: Action) {
                 }
             })
             .collect();
-        println!("  {rank}{cells}");
+        lines.push(format!("  {rank}{cells}"));
     }
+    lines
 }
