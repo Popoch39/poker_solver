@@ -36,6 +36,14 @@ Le plus petit tapis parmi les joueurs engagés dans un coup, mesuré avant de po
 Arbre d'actions où chaque joueur n'a que deux options : tapis (ou suivre un tapis) ou se coucher.
 _Éviter_ : jam/fold, shove/fold
 
+**Limp** :
+Entrer dans un pot non relancé en mettant juste la grosse blinde (ou en complétant depuis la petite blinde).
+_Éviter_ : call (désigne le fait de payer un tapis ou une relance), complete (en prose)
+
+**Min-raise** :
+Relance à deux grosses blindes dans un pot non relancé ; il y en a au plus une par coup dans l'arbre du solver.
+_Éviter_ : raise (seul, ambigu avec le tapis), open
+
 **Nœud** :
 Point de décision de l'arbre d'actions : un joueur à parler après une suite d'actions donnée (ex. « BB face au tapis de la SB »).
 _Éviter_ : spot (désigne la situation entière), état
@@ -59,6 +67,10 @@ _Éviter_ : erreur, distance à Nash
 **Facteur de réalisation** :
 Fraction de son équité qu'une range récupère réellement quand le coup se joue après le flop, selon la position et le nombre de joueurs.
 _Éviter_ : coefficient d'équité, EQR (en prose)
+
+**Modèle d'équité** :
+Valorisation d'un coup qui atteint le flop sans joueur à tapis : chaque joueur encore en jeu gagne son facteur de réalisation × son équité × le pot, sans jouer le postflop.
+_Éviter_ : postflop (désigne le jeu réel après le flop), modèle postflop
 
 ## Population et exploitation
 
