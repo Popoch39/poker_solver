@@ -1,5 +1,6 @@
 //! Slow tests (full solves at several stacks): the heads-up push/fold solution
-//! against the published Nash tables, and its exploitability. They live in
+//! against the published Nash tables, and its exploitability; the
+//! exploitability of a 3-max spot with limps and min-raises. They live in
 //! their own test binary so the fast ones can run without them:
 //! `cargo test -p nitro-solver --test convergence` runs only these.
 //!
@@ -10,7 +11,7 @@
 //! blinds) at which the hand is pushed or called; `20+` means always up to
 //! 20 BB, `*` marks the three hands whose push range has gaps (63s, 53s, 43s).
 
-use nitro_solver::{Action, HandClass, Node, SolveOptions, Spot, solve};
+use nitro_solver::{Action, HandClass, Node, Position, SolveOptions, Spot, solve};
 
 const PUSH_CHART: &str = "
    20+   20+   20+   20+   20+   20+   20+   20+   20+   20+   20+   20+   20+
@@ -176,4 +177,65 @@ fn exploitability_falls_below_a_tenth_of_a_milli_big_blind_per_hand() {
             "{stack} BB: {exploitability:?}"
         );
     }
+}
+
+/// Half a milli-big-blind per hand: the sampling floor of the 3-max chance
+/// model (ADR 0003), below which a smaller exploitability no longer means a
+/// more accurate strategy.
+const LIMP_MIN_RAISE_TARGET: f64 = 5e-4;
+
+#[test]
+fn fifteen_big_blind_spot_with_limps_and_min_raises_is_solved_below_the_sampling_floor() {
+    let spot = Spot::three_max(15.0, 15.0, 15.0)
+        .unwrap()
+        .with_limp(true)
+        .with_min_raise(true);
+    let solution = solve(
+        &spot,
+        &SolveOptions {
+            iterations: 3000,
+            target_exploitability: Some(LIMP_MIN_RAISE_TARGET),
+        },
+    );
+    let exploitability = solution.exploitability();
+    let players: Vec<Position> = exploitability
+        .per_player()
+        .iter()
+        .map(|(p, _)| *p)
+        .collect();
+    assert_eq!(players, [Position::Btn, Position::Sb, Position::Bb]);
+    for (position, gain) in exploitability.per_player() {
+        assert!(*gain >= 0.0, "{position}: {gain}");
+    }
+    assert!(
+        exploitability.total() < LIMP_MIN_RAISE_TARGET,
+        "{} iterations: {exploitability:?}",
+        solution.iterations()
+    );
+
+    // A barely trained strategy is far from it: the best response sees
+    // deviations at every street of the preflop tree.
+    let early = solve(
+        &spot,
+        &SolveOptions {
+            iterations: 20,
+            target_exploitability: None,
+        },
+    );
+    for (position, gain) in early.exploitability().per_player() {
+        assert!(*gain > 10.0 * exploitability.of(*position), "{position}");
+    }
+
+    let freq = |node: &str, hand: &str, action| {
+        let (node, hand): (Node, HandClass) = (node.parse().unwrap(), hand.parse().unwrap());
+        solution.strategy(node, hand).unwrap().frequency(action)
+    };
+    assert_eq!(
+        solution.actions(Node::BtnOpen),
+        Some(&[Action::Fold, Action::Limp, Action::Raise, Action::Push][..])
+    );
+    assert!(freq("btn-open", "AA", Action::Fold) < 0.01);
+    assert!(freq("btn-open", "72o", Action::Fold) > 0.99);
+    assert!(freq("bb-vs-btn-push-sb-call", "AA", Action::Call) > 0.99);
+    assert!(freq("btn-vs-btn-limp-sb-push", "AA", Action::Call) > 0.99);
 }

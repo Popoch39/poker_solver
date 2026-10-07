@@ -117,6 +117,8 @@ impl Evaluator {
                 (Node::SbVsBtnPush, Action::Call),
             ],
             Node::BbVsSbPush => &[(Node::BtnOpen, Action::Fold), (Node::SbOpen, Action::Push)],
+            // Reached through a limp or a min-raise: not a push/fold line.
+            Node::Line(_) => return None,
         };
         path.iter()
             .filter(|(node, _)| self.stacks[index(node.actor())] > 0.0)
