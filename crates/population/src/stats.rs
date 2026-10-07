@@ -1,5 +1,7 @@
+use std::sync::OnceLock;
+
 use nitro_hh::Card;
-use nitro_solver::{Action, HandClass, Node};
+use nitro_solver::{Action, HandClass, Node, Strategy};
 
 /// Number of two-card combinations in a deck.
 const COMBOS: f64 = 1326.0;
@@ -77,6 +79,48 @@ impl NodeStats {
         let prior = f64::from(class.combos()) / COMBOS;
         Some((given_action * self.frequency(action) / prior).min(1.0))
     }
+
+    /// The population's strategy for `hand` at this node, as it is locked
+    /// into the solver: the strongest hands by all-in equity against a
+    /// random hand take the aggressive action (push or call) until their
+    /// combos make up its observed frequency, the class at the boundary
+    /// mixing; every other hand folds.
+    ///
+    /// The hands shown at showdown are left out on purpose. Spread over 169
+    /// classes they are too few to lock class by class (at most a few
+    /// hundred per node and bucket on the NitroVariance dataset), so the
+    /// exploit would chase noise; and they are biased, a push being shown
+    /// only when called. [`NodeStats::estimated_frequency`] remains to
+    /// compare.
+    pub fn strategy(&self, hand: HandClass) -> Strategy {
+        let [passive, aggressive] = self.node.actions() else {
+            unreachable!("every push/fold node has two actions")
+        };
+        let share = self.frequency(*aggressive);
+        let mut stronger = 0.0;
+        for &class in strength_order() {
+            let combos = f64::from(class.combos()) / COMBOS;
+            if class == hand {
+                let f = ((share - stronger) / combos).clamp(0.0, 1.0);
+                return Strategy::new([(*passive, 1.0 - f), (*aggressive, f)]);
+            }
+            stronger += combos;
+        }
+        unreachable!("the order lists every class")
+    }
+}
+
+/// Every hand class from the strongest to the weakest by all-in equity
+/// against a random hand.
+fn strength_order() -> &'static [HandClass] {
+    static ORDER: OnceLock<Vec<HandClass>> = OnceLock::new();
+    ORDER.get_or_init(|| {
+        let mut order: Vec<(HandClass, f64)> = HandClass::all()
+            .map(|hand| (hand, hand.equity_vs_random()))
+            .collect();
+        order.sort_by(|a, b| b.1.total_cmp(&a.1));
+        order.into_iter().map(|(hand, _)| hand).collect()
+    })
 }
 
 /// How many times each hand class was seen, among hands whose cards were
