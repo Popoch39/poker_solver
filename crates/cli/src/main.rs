@@ -1,10 +1,11 @@
 //! `nitro`: command-line entry point of the Expresso Nitro study tool.
 //!
 //! A thin layer: it parses arguments, calls the public interface of the
-//! solver or the hand-history parser and formats the result. No poker logic
-//! lives here.
+//! solver, the simulator or the hand-history parser and formats the result.
+//! No poker logic lives here.
 
 mod hh;
+mod simulate;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -36,6 +37,8 @@ enum Command {
         #[arg(long, requires = "hand")]
         node: Option<Node>,
     },
+    /// Play many Expresso Nitro between bots and report win rate and ROI.
+    Simulate(simulate::Args),
     /// Parse Winamax Expresso Nitro hand histories and summaries, and report
     /// what was read and what was not.
     Hh {
@@ -56,12 +59,13 @@ fn main() -> ExitCode {
             iterations,
             hand,
             node,
-        } => solve_command(stacks, iterations, hand, node),
+        } => run_solve(stacks, iterations, hand, node),
+        Command::Simulate(args) => simulate::run(&args),
         Command::Hh { paths, ohh } => hh::run(&paths, ohh.as_deref()),
     }
 }
 
-fn solve_command(
+fn run_solve(
     stacks: Vec<f64>,
     iterations: u32,
     hand: Option<HandClass>,
