@@ -3,10 +3,13 @@
 //! A thin layer: it parses arguments, calls the solver's public interface and
 //! formats the result. No poker logic lives here.
 
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use nitro_solver::{Action, HandClass, Node, Position, Solution, SolveOptions, Spot, solve};
+use nitro_solver::{Action, HandClass, Node, Solution, SolveOptions, Spot, solve};
 
 #[derive(Parser)]
 #[command(version, about = "Expresso Nitro preflop study tool")]
@@ -17,20 +20,33 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Solve a heads-up push/fold spot and print its equilibrium ranges.
+    /// Solve a push/fold spot and print its equilibrium ranges.
     Solve {
-        /// Stacks in big blinds before posting the blinds: SB,BB.
-        #[arg(long, value_delimiter = ',', value_name = "SB,BB", required = true)]
+        /// Stacks in big blinds before posting the blinds: BTN,SB,BB for
+        /// 3-max (0 for an eliminated player), SB,BB for heads-up.
+        #[arg(long, value_delimiter = ',', value_name = "BTN,SB,BB", required = true)]
         stacks: Vec<f64>,
-        /// Number of CFR+ iterations.
+        /// Maximum number of solver iterations.
         #[arg(long, default_value_t = SolveOptions::default().iterations)]
         iterations: u32,
+        /// Stop once the exploitability is below this, in mBB per hand
+        /// (0 runs every iteration).
+        #[arg(
+            long,
+            value_name = "MBB",
+            default_value_t = 1000.0 * SolveOptions::default().target_exploitability.unwrap_or(0.0)
+        )]
+        target: f64,
         /// Only print the strategy of this hand (e.g. K7o, AKs, 99).
         #[arg(long)]
         hand: Option<HandClass>,
-        /// Restrict --hand to one node: sb-open or bb-vs-sb-push.
+        /// Restrict --hand to one node (e.g. btn-open, sb-vs-btn-push).
         #[arg(long, requires = "hand")]
         node: Option<Node>,
+        /// Also write the solution to this CSV file (one row per node, hand
+        /// and action).
+        #[arg(long, value_name = "FILE")]
+        csv: Option<PathBuf>,
     },
 }
 
@@ -38,13 +54,16 @@ fn main() -> ExitCode {
     let Command::Solve {
         stacks,
         iterations,
+        target,
         hand,
         node,
+        csv,
     } = Cli::parse().command;
     let spot = match stacks[..] {
+        [btn, sb, bb] => Spot::three_max(btn, sb, bb).map_err(|err| err.to_string()),
         [sb, bb] => Spot::heads_up(sb, bb).map_err(|err| err.to_string()),
         _ => Err(format!(
-            "--stacks takes two stacks (SB,BB), got {}",
+            "--stacks takes two or three stacks (BTN,SB,BB or SB,BB), got {}",
             stacks.len()
         )),
     };
@@ -55,7 +74,23 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let solution = solve(&spot, &SolveOptions { iterations });
+    let options = SolveOptions {
+        iterations,
+        target_exploitability: (target > 0.0).then_some(target / 1000.0),
+    };
+    let solution = solve(&spot, &options);
+    if let Some(path) = csv {
+        let written = File::create(&path)
+            .map(BufWriter::new)
+            .and_then(|mut file| {
+                solution.write_csv(&mut file)?;
+                file.flush()
+            });
+        if let Err(err) = written {
+            eprintln!("error: cannot write {}: {err}", path.display());
+            return ExitCode::FAILURE;
+        }
+    }
     match hand {
         Some(hand) => {
             let nodes = match node {
@@ -90,14 +125,21 @@ fn print_report(solution: &Solution) {
         .iter()
         .map(|(position, gain)| format!("{position} {:.4}", 1000.0 * gain))
         .collect();
+    let stacks: Vec<String> = spot
+        .positions()
+        .into_iter()
+        .map(|position| format!("{position} {} BB", spot.stack(position)))
+        .collect();
+    match spot.positions()[..] {
+        [_, _] => println!(
+            "Heads-up push/fold, stacks {} (effective {} BB), chip EV",
+            stacks.join(" / "),
+            spot.effective_stack()
+        ),
+        _ => println!("3-max push/fold, stacks {}, chip EV", stacks.join(" / ")),
+    }
     println!(
-        "Heads-up push/fold, stacks SB {} BB / BB {} BB (effective {} BB), chip EV",
-        spot.stack(Position::Sb),
-        spot.stack(Position::Bb),
-        spot.effective_stack()
-    );
-    println!(
-        "{} CFR+ iterations, exploitability {:.4} mBB/hand ({})",
+        "{} iterations, exploitability {:.4} mBB/hand ({})",
         solution.iterations(),
         1000.0 * exploitability.total(),
         per_player.join(", ")

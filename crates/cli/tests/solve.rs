@@ -44,8 +44,98 @@ fn solve_answers_for_one_hand_at_one_node() {
 }
 
 #[test]
-fn solve_rejects_a_stack_below_one_big_blind() {
-    let output = nitro(&["solve", "--stacks", "0.5,10"]);
+fn solve_rejects_a_spot_without_two_players() {
+    let output = nitro(&["solve", "--stacks", "0,10"]);
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("at least 1 BB"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("positive number of BB"));
+    let output = nitro(&["solve", "--stacks", "10,10,10,10"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("two or three stacks"));
+}
+
+#[test]
+fn solve_prints_every_three_max_range_and_each_players_exploitability() {
+    let out = stdout(&nitro(&["solve", "--stacks", "10,8,12"]));
+    assert!(
+        out.contains("3-max push/fold, stacks BTN 10 BB / SB 8 BB / BB 12 BB"),
+        "{out}"
+    );
+    let exploitability = out.lines().find(|l| l.contains("exploitability")).unwrap();
+    for player in ["BTN ", "SB ", "BB "] {
+        assert!(exploitability.contains(player), "{exploitability}");
+    }
+    for heading in [
+        "BTN open: push",
+        "SB vs BTN push: call",
+        "SB open: push",
+        "BB vs BTN push: call",
+        "BB vs BTN push and SB call: call",
+        "BB vs SB push: call",
+    ] {
+        assert!(out.contains(heading), "{heading}\n{out}");
+    }
+    let header = "     A   K   Q   J   T   9   8   7   6   5   4   3   2";
+    assert_eq!(out.matches(header).count(), 6, "{out}");
+}
+
+#[test]
+fn solve_answers_for_one_hand_at_one_three_max_node() {
+    let out = stdout(&nitro(&[
+        "solve",
+        "--stacks",
+        "10,10,10",
+        "--node",
+        "bb-vs-btn-push-sb-call",
+        "--hand",
+        "AA",
+    ]));
+    assert_eq!(
+        out.trim_end(),
+        "AA at BB vs BTN push and SB call: fold 0.0%, call 100.0%"
+    );
+}
+
+#[test]
+fn solve_stops_at_the_iteration_count_when_the_target_is_zero() {
+    let out = stdout(&nitro(&[
+        "solve",
+        "--stacks",
+        "10,10,10",
+        "--iterations",
+        "12",
+        "--target",
+        "0",
+    ]));
+    assert!(out.contains("12 iterations, exploitability"), "{out}");
+    let out = stdout(&nitro(&["solve", "--stacks", "10,10,10", "--target", "5"]));
+    let ran: u32 = out
+        .split(" iterations")
+        .next()
+        .and_then(|head| head.rsplit('\n').next())
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(ran < 100, "{out}");
+}
+
+#[test]
+fn solve_exports_the_solution_as_csv() {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("solve-csv");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("solution.csv");
+    let out = stdout(&nitro(&[
+        "solve",
+        "--stacks",
+        "10,10,10",
+        "--csv",
+        path.to_str().unwrap(),
+    ]));
+    assert!(out.contains("exploitability"), "{out}");
+    let csv = std::fs::read_to_string(&path).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(
+        csv.starts_with("node,position,hand,action,frequency\n"),
+        "{csv}"
+    );
+    assert_eq!(csv.lines().count(), 1 + 6 * 169 * 2);
 }
