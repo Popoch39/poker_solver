@@ -1,12 +1,26 @@
-//! Tabular CFR+ over (decision node, hand class) information sets.
+//! Tabular Discounted CFR over (decision node, hand class) information sets.
 //!
-//! Regret matching+ with linear averaging, simultaneous updates. The engine
-//! only sees a [`Game`] that turns a strategy profile into counterfactual
-//! action values; the game owns the tree, the chance model and the payoffs.
+//! DCFR (Brown and Sandholm, 2019) with the parameters the authors recommend
+//! (α = 3/2, β = 0, γ = 2), simultaneous updates. On a 3-max push/fold spot
+//! it needs about ten times fewer iterations than CFR+ to reach a given
+//! exploitability (see `docs/adr/0003-banque-de-donnes-stratifiee-et-dcfr.md`).
+//! The engine only sees a [`Game`] that turns a strategy profile into
+//! counterfactual action values; the game owns the tree, the chance model and
+//! the payoffs.
 
 use crate::hand::NUM_CLASSES;
 use crate::spot::Position;
 use crate::tree::Node;
+
+/// Discount of positive cumulative regrets at iteration t: t^α / (t^α + 1).
+const ALPHA: f64 = 1.5;
+/// Discount of negative cumulative regrets: t^β / (t^β + 1) with β = 0.
+const NEGATIVE_DISCOUNT: f64 = 0.5;
+/// Iteration t's strategy weighs t^γ in the average.
+const GAMMA: i32 = 2;
+/// How often the stopping rule measures the exploitability, which costs one
+/// more evaluation of the game.
+const CHECK_EVERY: u32 = 10;
 
 /// One number per (node, hand class, action), for the nodes of one tree.
 #[derive(Clone, Debug)]
@@ -81,35 +95,74 @@ pub(crate) trait Game {
     fn action_values(&self, profile: &Table) -> Table;
 }
 
-/// Runs `iterations` of CFR+ and returns the average strategy profile.
-pub(crate) fn solve(game: &impl Game, iterations: u32) -> Table {
+/// The average strategy profile after the run, with how long it ran and the
+/// best-response gain of each player who has a decision.
+pub(crate) struct Run {
+    pub(crate) profile: Table,
+    pub(crate) iterations: u32,
+    pub(crate) exploitability: Vec<(Position, f64)>,
+}
+
+/// Runs DCFR for `iterations`, or until the average strategy's exploitability
+/// falls below `target` (BB per hand), whichever comes first.
+pub(crate) fn solve(game: &impl Game, iterations: u32, target: Option<f64>) -> Run {
     let nodes = game.nodes();
     let mut regrets = Table::new(nodes, 0.0);
     let mut average = Table::new(nodes, 0.0);
     let mut current = Table::uniform(nodes);
     for t in 1..=iterations {
         let values = game.action_values(&current);
+        let tf = f64::from(t);
+        let positive_discount = tf.powf(ALPHA) / (tf.powf(ALPHA) + 1.0);
+        let weight = tf.powi(GAMMA);
         for (n, c) in current.infosets() {
             let sigma = current.infoset(n, c);
             let cv = values.infoset(n, c);
             let node_value: f64 = sigma.iter().zip(cv).map(|(s, v)| s * v).sum();
             for (r, v) in regrets.infoset_mut(n, c).iter_mut().zip(cv) {
-                *r = (*r + v - node_value).max(0.0);
+                let discount = if *r > 0.0 {
+                    positive_discount
+                } else {
+                    NEGATIVE_DISCOUNT
+                };
+                *r = *r * discount + v - node_value;
             }
             for (a, s) in average.infoset_mut(n, c).iter_mut().zip(sigma) {
-                *a += t as f64 * s;
+                *a += weight * s;
             }
         }
         for (n, c) in current.infosets() {
             let regret = regrets.infoset(n, c);
-            let total: f64 = regret.iter().sum();
+            let total: f64 = regret.iter().map(|r| r.max(0.0)).sum();
             let width = regret.len() as f64;
             for (s, r) in current.infoset_mut(n, c).iter_mut().zip(regret) {
-                *s = if total > 0.0 { r / total } else { 1.0 / width };
+                *s = if total > 0.0 {
+                    r.max(0.0) / total
+                } else {
+                    1.0 / width
+                };
+            }
+        }
+        if let Some(target) = target
+            && (t % CHECK_EVERY == 0 || t == iterations)
+        {
+            let profile = normalize(average.clone());
+            let exploitability = exploitability(game, &profile);
+            if exploitability.iter().map(|(_, gain)| gain).sum::<f64>() < target {
+                return Run {
+                    profile,
+                    iterations: t,
+                    exploitability,
+                };
             }
         }
     }
-    normalize(average)
+    let profile = normalize(average);
+    Run {
+        exploitability: exploitability(game, &profile),
+        profile,
+        iterations,
+    }
 }
 
 fn normalize(mut sums: Table) -> Table {

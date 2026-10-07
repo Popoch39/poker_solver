@@ -11,7 +11,7 @@ use rs_poker::core::{Card, SevenCardAccum};
 
 use crate::hand::{HandClass, NUM_CLASSES};
 
-const NUM_CARDS: u8 = 52;
+pub(crate) const NUM_CARDS: u8 = 52;
 const NUM_COMBOS: usize = 1326;
 const NUM_PAIRS: usize = NUM_CLASSES * NUM_CLASSES;
 
@@ -91,14 +91,14 @@ fn binomial(n: u64, k: u64) -> u64 {
 }
 
 /// The 1326 two-card combos with their class.
-struct Combos {
-    cards: Vec<[u8; 2]>,
-    mask: Vec<u64>,
-    class: Vec<usize>,
+pub(crate) struct Combos {
+    pub(crate) cards: Vec<[u8; 2]>,
+    pub(crate) mask: Vec<u64>,
+    pub(crate) class: Vec<usize>,
 }
 
 impl Combos {
-    fn new() -> Combos {
+    pub(crate) fn new() -> Combos {
         let mut cards = Vec::with_capacity(NUM_COMBOS);
         for a in 0..NUM_CARDS {
             for b in a + 1..NUM_CARDS {

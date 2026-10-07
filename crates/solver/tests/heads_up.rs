@@ -26,7 +26,7 @@ fn nodes_have_short_identifiers_for_the_command_line() {
     }
     assert_eq!("sb-open".parse::<Node>(), Ok(Node::SbOpen));
     assert_eq!("bb-vs-sb-push".parse::<Node>(), Ok(Node::BbVsSbPush));
-    assert!("btn-open".parse::<Node>().is_err());
+    assert!("co-open".parse::<Node>().is_err());
 }
 
 #[test]
@@ -62,9 +62,10 @@ fn an_action_not_available_at_the_node_has_zero_frequency() {
 }
 
 #[test]
-fn spot_stacks_must_be_at_least_one_big_blind() {
-    assert!(Spot::heads_up(0.5, 10.0).is_err());
+fn spot_stacks_must_be_positive_and_may_be_below_a_blind() {
+    assert!(Spot::heads_up(0.0, 10.0).is_err());
     assert!(Spot::heads_up(10.0, f64::NAN).is_err());
+    assert!(Spot::heads_up(0.5, 10.0).is_ok());
     let spot = Spot::heads_up(9.0, 25.0).unwrap();
     assert_eq!(spot.stack(Position::Sb), 9.0);
     assert_eq!(spot.stack(Position::Bb), 25.0);
