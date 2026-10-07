@@ -114,6 +114,24 @@ fn simulated_hands_round_trip_through_open_hand_history() {
 }
 
 #[test]
+fn each_game_is_a_tournament_named_after_the_hero_strategy() {
+    let config = config(4);
+    let hands = hand_histories(&config, 5, Some(1));
+    let tournament = hands[0].tournament.as_ref().unwrap();
+    assert_eq!(tournament.id, "always-all-in-4-5");
+    assert_eq!(tournament.buy_in.prize.cents(), 93);
+    assert_eq!(tournament.buy_in.rake.cents(), 7);
+    assert!(
+        hands
+            .iter()
+            .all(|h| h.tournament.as_ref() == Some(tournament))
+    );
+    assert_eq!(hands[0].game_number, "always-all-in-4-5-1");
+    let anonymous = hand_histories(&config, 5, None);
+    assert_eq!(anonymous[0].tournament.as_ref().unwrap().id, "4-5");
+}
+
+#[test]
 fn hand_histories_replay_the_simulated_game() {
     let config = config(3);
     assert_eq!(

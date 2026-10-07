@@ -56,6 +56,56 @@ pub struct SeatReport {
     pub roi: f64,
     /// Normal approximation; jackpots make it optimistic on small samples.
     pub roi_ci95: (f64, f64),
+    /// Where the win rate stands against the break-even, at 95 %.
+    pub verdict: Verdict,
+}
+
+/// Where a win rate stands against the break-even win rate: the answer to
+/// "is it break even?".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    /// The whole 95 % interval of the win rate is above the break-even.
+    AboveBreakEven,
+    /// The whole 95 % interval is below it.
+    BelowBreakEven,
+    /// The interval straddles it: more games are needed to tell.
+    Undecided,
+}
+
+/// What one strategy wins over another at the same seat, from two
+/// simulations of the same games.
+///
+/// The intervals treat the two simulations as independent samples. With
+/// the same seed, both are dealt the same cards until their play differs,
+/// so the true interval is narrower: these are conservative.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Gain {
+    /// Difference of the win rates.
+    pub win_rate: f64,
+    pub win_rate_ci95: (f64, f64),
+    /// Difference of the ROIs after rake, in buy-ins per game.
+    pub roi: f64,
+    pub roi_ci95: (f64, f64),
+}
+
+impl Gain {
+    /// What `seat` wins in `report` over the same seat in `baseline`.
+    pub fn of(report: &Report, baseline: &Report, seat: usize) -> Gain {
+        let (a, b) = (&report.seats[seat], &baseline.seats[seat]);
+        let win_rate_variance =
+            |s: &SeatReport, games: u64| s.win_rate * (1.0 - s.win_rate) / games.max(1) as f64;
+        let win_rate_half = Z95
+            * (win_rate_variance(a, report.games) + win_rate_variance(b, baseline.games)).sqrt();
+        let half = |(low, high): (f64, f64)| (high - low) / 2.0;
+        let roi_half = half(a.roi_ci95).hypot(half(b.roi_ci95));
+        let (win_rate, roi) = (a.win_rate - b.win_rate, a.roi - b.roi);
+        Gain {
+            win_rate,
+            win_rate_ci95: (win_rate - win_rate_half, win_rate + win_rate_half),
+            roi,
+            roi_ci95: (roi - roi_half, roi + roi_half),
+        }
+    }
 }
 
 struct GameOutcome {
@@ -88,14 +138,20 @@ pub fn simulate(config: &SimulationConfig) -> Report {
         let roi = sum / n;
         let variance = (sum_sq - n * roi * roi) / (n - 1.0).max(1.0);
         let half_width = Z95 * (variance.max(0.0) / n).sqrt();
+        let win_rate_ci95 = wilson_interval(wins, outcomes.len() as u64);
         SeatReport {
             name: config.seats[seat].name().to_owned(),
             wins,
             win_rate,
-            win_rate_ci95: wilson_interval(wins, outcomes.len() as u64),
+            win_rate_ci95,
             break_even_gap: win_rate - break_even_win_rate,
             roi,
             roi_ci95: (roi - half_width, roi + half_width),
+            verdict: match win_rate_ci95 {
+                (low, _) if low > break_even_win_rate => Verdict::AboveBreakEven,
+                (_, high) if high < break_even_win_rate => Verdict::BelowBreakEven,
+                _ => Verdict::Undecided,
+            },
         }
     });
     Report {
@@ -131,13 +187,18 @@ fn new_game(config: &SimulationConfig, index: u64) -> (u32, NitroGame) {
 /// The hands of game `index` of the simulation, the very game [`simulate`]
 /// plays and counts, written down by `hero` (the table seat whose cards are
 /// dealt face up, if any) as the hand histories of one tournament, ready for
-/// [`nitro_hh::to_ohh`].
+/// [`nitro_hh::to_ohh`]. The tournament is named after the seed, the game
+/// and the hero's strategy, so that the games of two hero strategies stay
+/// apart once read back.
 pub fn hand_histories(config: &SimulationConfig, index: u64, hero: Option<usize>) -> Vec<Hand> {
     let (_, mut game) = new_game(config, index);
     let table = &config.prize_table;
     let rake = (table.buy_in_cents() * table.rake_percent()).div_ceil(100);
+    let strategy = hero.map_or(String::new(), |seat| {
+        format!("{}-", config.seats[seat].name())
+    });
     let tournament = TournamentInfo {
-        id: format!("{}-{index}", config.seed),
+        id: format!("{strategy}{}-{index}", config.seed),
         name: history::TABLE_NAME.into(),
         buy_in: BuyIn {
             prize: Euros::from_cents(u64::from(table.buy_in_cents() - rake)),

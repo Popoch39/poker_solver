@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use nitro_simulator::{
-    PrizeTable, Report, SeatStrategy, SimulationConfig, Structure, TrivialBot, simulate,
+    Gain, PrizeTable, Report, SeatStrategy, SimulationConfig, Structure, TrivialBot, Verdict,
+    simulate,
 };
 
 fn config(bots: [TrivialBot; 3], games: u64, seed: u64) -> SimulationConfig {
@@ -60,6 +61,50 @@ fn the_report_compares_the_win_rate_to_the_break_even() {
         let (low, high) = seat.roi_ci95;
         assert!(low < seat.roi && seat.roi < high, "{seat:?}");
     }
+}
+
+#[test]
+fn a_seat_is_above_or_below_the_break_even_only_when_its_interval_says_so() {
+    use TrivialBot::*;
+    let report = simulate(&config([AlwaysAllIn, AlwaysFold, Random], 500, 8));
+    assert_eq!(report.seats[0].verdict, Verdict::AboveBreakEven);
+    assert_eq!(report.seats[1].verdict, Verdict::BelowBreakEven);
+    let even = simulate(&config([Random; 3], 300, 9));
+    let undecided = even
+        .seats
+        .iter()
+        .filter(|s| s.verdict == Verdict::Undecided)
+        .count();
+    assert!(undecided >= 1, "{even:?}");
+    for seat in &even.seats {
+        let (low, high) = seat.win_rate_ci95;
+        let expected = match () {
+            _ if low > even.break_even_win_rate => Verdict::AboveBreakEven,
+            _ if high < even.break_even_win_rate => Verdict::BelowBreakEven,
+            _ => Verdict::Undecided,
+        };
+        assert_eq!(seat.verdict, expected, "{seat:?}");
+    }
+}
+
+#[test]
+fn the_gain_of_one_strategy_over_another_comes_with_its_interval() {
+    use TrivialBot::*;
+    let baseline = simulate(&config([Random, AlwaysAllIn, AlwaysAllIn], 2_000, 10));
+    let better = simulate(&config([AlwaysAllIn; 3], 2_000, 10));
+
+    let gain = Gain::of(&better, &baseline, 0);
+
+    let (seat, base) = (&better.seats[0], &baseline.seats[0]);
+    assert!((gain.win_rate - (seat.win_rate - base.win_rate)).abs() < 1e-12);
+    assert!((gain.roi - (seat.roi - base.roi)).abs() < 1e-12);
+    // Independent samples: the half-widths add up in quadrature.
+    let half = |(low, high): (f64, f64)| (high - low) / 2.0;
+    let roi_half = half(seat.roi_ci95).hypot(half(base.roi_ci95));
+    assert!((half(gain.roi_ci95) - roi_half).abs() < 1e-9, "{gain:?}");
+    let (low, high) = gain.win_rate_ci95;
+    assert!(low < gain.win_rate && gain.win_rate < high);
+    assert_eq!(Gain::of(&better, &better, 0).win_rate, 0.0);
 }
 
 #[test]

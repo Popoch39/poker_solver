@@ -18,7 +18,9 @@ pub use seat::{
     Card, Decision, ParseTrivialBotError, PlayerView, Position, SeatStrategy, SeatView, Street,
     Suit, TrivialBot, Value,
 };
-pub use simulation::{Report, SeatReport, SimulationConfig, hand_histories, simulate};
+pub use simulation::{
+    Gain, Report, SeatReport, SimulationConfig, Verdict, hand_histories, simulate,
+};
 pub use solver_hero::SolverHero;
 pub use structure::{BlindLevel, NITRO_BLIND_LEVELS, Structure};
 pub use table::{TableSeat, TableView};
