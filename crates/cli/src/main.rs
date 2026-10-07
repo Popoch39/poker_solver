@@ -1,7 +1,11 @@
 //! `nitro`: command-line entry point of the Expresso Nitro study tool.
 //!
-//! A thin layer: it parses arguments, calls the solver's public interface and
-//! formats the result. No poker logic lives here.
+//! A thin layer: it parses arguments, calls the public interface of the
+//! solver, the simulator or the hand-history parser and formats the result.
+//! No poker logic lives here.
+
+mod hh;
+mod simulate;
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -48,17 +52,44 @@ enum Command {
         #[arg(long, value_name = "FILE")]
         csv: Option<PathBuf>,
     },
+    /// Play many Expresso Nitro between bots and report win rate and ROI.
+    Simulate(simulate::Args),
+    /// Parse Winamax Expresso Nitro hand histories and summaries, and report
+    /// what was read and what was not.
+    Hh {
+        /// Hand-history, summary or Open Hand History (`.ohh`) files, or
+        /// folders searched for `.txt` and `.ohh` files.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Also write every parsed hand to this Open Hand History file.
+        #[arg(long, value_name = "FILE")]
+        ohh: Option<PathBuf>,
+    },
 }
 
 fn main() -> ExitCode {
-    let Command::Solve {
-        stacks,
-        iterations,
-        target,
-        hand,
-        node,
-        csv,
-    } = Cli::parse().command;
+    match Cli::parse().command {
+        Command::Solve {
+            stacks,
+            iterations,
+            target,
+            hand,
+            node,
+            csv,
+        } => run_solve(stacks, iterations, target, hand, node, csv),
+        Command::Simulate(args) => simulate::run(&args),
+        Command::Hh { paths, ohh } => hh::run(&paths, ohh.as_deref()),
+    }
+}
+
+fn run_solve(
+    stacks: Vec<f64>,
+    iterations: u32,
+    target: f64,
+    hand: Option<HandClass>,
+    node: Option<Node>,
+    csv: Option<PathBuf>,
+) -> ExitCode {
     let spot = match stacks[..] {
         [btn, sb, bb] => Spot::three_max(btn, sb, bb).map_err(|err| err.to_string()),
         [sb, bb] => Spot::heads_up(sb, bb).map_err(|err| err.to_string()),
