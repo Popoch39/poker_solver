@@ -12,6 +12,10 @@
 //! - The bucket of a hand is that of its effective stack, the smallest stack
 //!   dealt in, in BB, before the blinds: [`nitro_solver::Spot::effective_stack`]
 //!   of the hand's spot.
+//! - [`PopulationModel::get`] pools heads-up and three-handed hands, which
+//!   share the SB's open and the BB's answer to it;
+//!   [`PopulationModel::get_at`] keeps them apart ([`TableSize`]), and so
+//!   does node-locking.
 //! - A move that puts every opponent still in all-in is a push (or a call
 //!   when facing one), whatever its size: the tree's all-in is for the
 //!   effective stack.
@@ -30,6 +34,6 @@ mod stats;
 
 pub use bucket::StackBucket;
 pub use leak::{Leak, LeakOptions, LeakReport};
-pub use model::{OffTree, OffTreeAction, Players, PopulationModel};
+pub use model::{OffTree, OffTreeAction, Players, PopulationModel, TableSize};
 pub use nitro_solver::{Action, HandClass, Node, Position};
 pub use stats::{KnownHands, NodeStats};

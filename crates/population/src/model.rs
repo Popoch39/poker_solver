@@ -37,11 +37,33 @@ impl Players {
     }
 }
 
+/// How many players a hand is dealt to.
+///
+/// The SB's open and the BB's answer to it are nodes of both trees, but a
+/// heads-up SB is the button, while a three-handed one only opens once the
+/// BTN has folded: the population plays them differently.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TableSize {
+    HeadsUp,
+    ThreeMax,
+}
+
+impl TableSize {
+    pub fn of(spot: &Spot) -> TableSize {
+        match spot.positions().len() {
+            2 => TableSize::HeadsUp,
+            _ => TableSize::ThreeMax,
+        }
+    }
+}
+
 /// Action frequencies per push/fold node and stack bucket, built from hand
 /// histories without keeping anything that identifies a player.
 #[derive(Clone, Debug, Default)]
 pub struct PopulationModel {
     nodes: HashMap<(Node, StackBucket), NodeStats>,
+    /// The same decisions, heads-up and three-handed apart.
+    by_table: HashMap<(Node, StackBucket, TableSize), NodeStats>,
     off_tree: OffTree,
     hands: usize,
     hands_in_tree: usize,
@@ -58,9 +80,16 @@ impl PopulationModel {
     }
 
     /// What was observed at `node` for effective stacks in `bucket`, if the
-    /// node was reached there at least once.
+    /// node was reached there at least once; heads-up and three-handed hands
+    /// pooled.
     pub fn get(&self, node: Node, bucket: StackBucket) -> Option<&NodeStats> {
         self.nodes.get(&(node, bucket))
+    }
+
+    /// What was observed at `node` for effective stacks in `bucket`, in the
+    /// hands dealt to `table` players only.
+    pub fn get_at(&self, node: Node, bucket: StackBucket, table: TableSize) -> Option<&NodeStats> {
+        self.by_table.get(&(node, bucket, table))
     }
 
     /// Every (node, bucket) observed at least once, in the order the nodes
@@ -75,15 +104,16 @@ impl PopulationModel {
     /// Locks into `spot` the nodes where the population plays against
     /// `hero` (node-locking): every node of another position observed at
     /// least `min_sample` times in the bucket of the spot's effective stack,
-    /// on [`NodeStats::strategy`]. The hero's nodes stay free, for the
-    /// solver to find the exploit; so do the nodes sampled too little to be
-    /// trusted.
+    /// at a table of the spot's size, on [`NodeStats::strategy`]. The hero's
+    /// nodes stay free, for the solver to find the exploit; so do the nodes
+    /// sampled too little to be trusted.
     pub fn lock(&self, spot: Spot, hero: Position, min_sample: u32) -> Spot {
         let bucket = StackBucket::of(spot.effective_stack());
+        let table = TableSize::of(&spot);
         TREE_ORDER
             .into_iter()
             .filter(|node| node.actor() != hero)
-            .fold(spot, |spot, node| match self.get(node, bucket) {
+            .fold(spot, |spot, node| match self.get_at(node, bucket, table) {
                 Some(stats) if stats.sample() >= min_sample => spot
                     .lock(node, |hand| stats.strategy(hand))
                     .expect("a population strategy is a valid lock"),
@@ -119,6 +149,7 @@ impl PopulationModel {
             return;
         };
         let bucket = StackBucket::of(table.spot.effective_stack());
+        let size = TableSize::of(&table.spot);
         let mut walk = Walk::new(&table, hand.big_blind);
         let mut left_tree = false;
         for action in &hand.actions {
@@ -137,11 +168,17 @@ impl PopulationModel {
             }
             match walk.step(position, action.kind, action.all_in) {
                 None => {}
-                Some(Step::Decision(node, choice)) if included => self
-                    .nodes
-                    .entry((node, bucket))
-                    .or_insert_with(|| NodeStats::new(node))
-                    .record(choice, cards(hand, action.seat)),
+                Some(Step::Decision(node, choice)) if included => {
+                    let cards = cards(hand, action.seat);
+                    self.nodes
+                        .entry((node, bucket))
+                        .or_insert_with(|| NodeStats::new(node))
+                        .record(choice, cards);
+                    self.by_table
+                        .entry((node, bucket, size))
+                        .or_insert_with(|| NodeStats::new(node))
+                        .record(choice, cards);
+                }
                 Some(Step::Decision(..)) => {}
                 Some(Step::LeftTree(kind)) => {
                     left_tree = true;
