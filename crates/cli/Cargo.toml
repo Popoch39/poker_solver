@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 nitro-hh.workspace = true
+nitro-population.workspace = true
 nitro-simulator.workspace = true
 nitro-solver.workspace = true
 

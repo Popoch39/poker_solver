@@ -5,6 +5,7 @@
 //! No poker logic lives here.
 
 mod hh;
+mod population;
 mod simulate;
 
 use std::fs::File;
@@ -65,6 +66,9 @@ enum Command {
         #[arg(long, value_name = "FILE")]
         ohh: Option<PathBuf>,
     },
+    /// Aggregate hand histories into the population model: action
+    /// frequencies per push/fold node and stack bucket, with sample sizes.
+    Population(population::Args),
 }
 
 fn main() -> ExitCode {
@@ -79,6 +83,7 @@ fn main() -> ExitCode {
         } => run_solve(stacks, iterations, target, hand, node, csv),
         Command::Simulate(args) => simulate::run(&args),
         Command::Hh { paths, ohh } => hh::run(&paths, ohh.as_deref()),
+        Command::Population(args) => population::run(&args),
     }
 }
 
