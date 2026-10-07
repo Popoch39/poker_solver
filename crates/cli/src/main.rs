@@ -1,7 +1,9 @@
 //! `nitro`: command-line entry point of the Expresso Nitro study tool.
 //!
-//! A thin layer: it parses arguments, calls the solver's public interface and
-//! formats the result. No poker logic lives here.
+//! A thin layer: it parses arguments, calls the solver's or the simulator's
+//! public interface and formats the result. No poker logic lives here.
+
+mod simulate;
 
 use std::process::ExitCode;
 
@@ -32,15 +34,28 @@ enum Command {
         #[arg(long, requires = "hand")]
         node: Option<Node>,
     },
+    /// Play many Expresso Nitro between bots and report win rate and ROI.
+    Simulate(simulate::Args),
 }
 
 fn main() -> ExitCode {
-    let Command::Solve {
-        stacks,
-        iterations,
-        hand,
-        node,
-    } = Cli::parse().command;
+    match Cli::parse().command {
+        Command::Solve {
+            stacks,
+            iterations,
+            hand,
+            node,
+        } => run_solve(stacks, iterations, hand, node),
+        Command::Simulate(args) => simulate::run(&args),
+    }
+}
+
+fn run_solve(
+    stacks: Vec<f64>,
+    iterations: u32,
+    hand: Option<HandClass>,
+    node: Option<Node>,
+) -> ExitCode {
     let spot = match stacks[..] {
         [sb, bb] => Spot::heads_up(sb, bb).map_err(|err| err.to_string()),
         _ => Err(format!(
