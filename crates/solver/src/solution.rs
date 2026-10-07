@@ -6,6 +6,7 @@ use crate::heads_up::HeadsUpPushFold;
 use crate::spot::{Position, Spot};
 use crate::three_max::ThreeMaxPushFold;
 use crate::tree::{Action, Node};
+use crate::tree_game::TreeGame;
 
 /// How long to run the solver: until the exploitability target is met, or
 /// for at most `iterations`.
@@ -34,7 +35,9 @@ impl Default for SolveOptions {
 /// strategy of every free node that is an equilibrium of the game where the
 /// locked nodes always play their given frequencies.
 pub fn solve(spot: &Spot, options: &SolveOptions) -> Solution {
-    if spot.is_heads_up() {
+    if spot.has_flop() {
+        solve_game(spot, options, &TreeGame::new(spot))
+    } else if spot.is_heads_up() {
         solve_game(spot, options, &HeadsUpPushFold::new(spot))
     } else {
         solve_game(spot, options, &ThreeMaxPushFold::new(spot))
@@ -42,7 +45,13 @@ pub fn solve(spot: &Spot, options: &SolveOptions) -> Solution {
 }
 
 fn solve_game(spot: &Spot, options: &SolveOptions, game: &impl Game) -> Solution {
-    let locks: Vec<Option<&[f64]>> = game.nodes().iter().map(|&n| spot.locked(n)).collect();
+    let locked: Vec<Option<Vec<f64>>> = game
+        .nodes()
+        .iter()
+        .zip(game.actions())
+        .map(|(&n, actions)| spot.locked(n, actions))
+        .collect();
+    let locks: Vec<Option<&[f64]>> = locked.iter().map(Option::as_deref).collect();
     let run = cfr::solve(
         game,
         options.iterations,
@@ -92,14 +101,22 @@ impl Solution {
         self.profile.nodes()
     }
 
+    /// The legal actions at `node` in this spot, the passive one (fold or
+    /// check) first, or `None` if the node is not in this spot's tree.
+    pub fn actions(&self, node: Node) -> Option<&'static [Action]> {
+        let n = self.nodes().iter().position(|&x| x == node)?;
+        Some(self.profile.actions(n))
+    }
+
     /// The action frequencies of `hand` at `node`, or `None` if the node is
     /// not in this spot's tree.
     pub fn strategy(&self, node: Node, hand: HandClass) -> Option<Strategy> {
         let n = self.nodes().iter().position(|&x| x == node)?;
         let frequencies = self.profile.infoset(n, hand.index());
         Some(Strategy {
-            frequencies: node
-                .actions()
+            frequencies: self
+                .profile
+                .actions(n)
                 .iter()
                 .copied()
                 .zip(frequencies.iter().copied())
@@ -131,13 +148,32 @@ impl Solution {
     /// against opponents who play the equilibrium after all.
     ///
     /// # Panics
-    /// If the three solutions are not of the same table (same stacks).
+    /// If the three solutions are not of the same table (same stacks,
+    /// allowed actions and realization factors).
     pub fn gain_over(&self, baseline: &Solution, position: Position, opponents: &Solution) -> f64 {
         assert!(
             self.spot.same_table(&baseline.spot) && self.spot.same_table(&opponents.spot),
             "the solutions must be of the same table"
         );
-        if self.spot.is_heads_up() {
+        if self.spot.has_flop() {
+            // A player can act again on a line: compare the values of whole
+            // profiles rather than of single decisions.
+            let game = TreeGame::new(&self.spot);
+            let value = |ours: &Solution| {
+                let mut profile = opponents.profile.clone();
+                for (n, node) in self.nodes().iter().enumerate() {
+                    if node.actor() == position {
+                        for class in 0..NUM_CLASSES {
+                            profile
+                                .infoset_mut(n, class)
+                                .copy_from_slice(ours.profile.infoset(n, class));
+                        }
+                    }
+                }
+                game.value(&profile, position)
+            };
+            value(self) - value(baseline)
+        } else if self.spot.is_heads_up() {
             self.gain_in(
                 &HeadsUpPushFold::new(&self.spot),
                 baseline,

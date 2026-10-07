@@ -8,12 +8,12 @@
 
 use rayon::prelude::*;
 
-use crate::cfr::{Game, Table};
+use crate::cfr::{self, Game, Table};
 use crate::hand::NUM_CLASSES;
 use crate::push_fold::{BTN_BB, BTN_SB, NUM_TERMS, Payoff, PushFold, SB_BB, Slot};
 use crate::spot::{Position, Spot};
 use crate::three_way_equity::{BB_STRIDE, SAMPLES, ThreeWayEquity};
-use crate::tree::Node;
+use crate::tree::{Action, Node};
 
 const FOLD: usize = 0;
 const ALL_IN: usize = 1;
@@ -22,15 +22,18 @@ pub(crate) struct ThreeMaxPushFold {
     equity: &'static ThreeWayEquity,
     tree: PushFold,
     nodes: Vec<Node>,
+    actions: Vec<&'static [Action]>,
     lines: Lines,
 }
 
 impl ThreeMaxPushFold {
     pub(crate) fn new(spot: &Spot) -> ThreeMaxPushFold {
         let tree = PushFold::new(spot);
+        let nodes = tree.decisions();
         ThreeMaxPushFold {
             equity: ThreeWayEquity::get(),
-            nodes: tree.decisions(),
+            actions: nodes.iter().map(|n| n.actions()).collect(),
+            nodes,
             lines: Lines::new(&tree),
             tree,
         }
@@ -127,6 +130,14 @@ impl Game for ThreeMaxPushFold {
         &self.nodes
     }
 
+    fn actions(&self) -> &[&'static [Action]] {
+        &self.actions
+    }
+
+    fn exploitability(&self, profile: &Table, locks: &[Option<&[f64]>]) -> Vec<(Position, f64)> {
+        cfr::one_shot_exploitability(self, profile, locks)
+    }
+
     fn action_values(&self, profile: &Table) -> Table {
         let x = self.all_in(profile);
         let partials: Vec<Partial> = (0..NUM_CLASSES)
@@ -135,7 +146,7 @@ impl Game for ThreeMaxPushFold {
             .collect();
 
         let scale = 1.0 / self.equity.total_deals;
-        let mut values = Table::new(&self.nodes, 0.0);
+        let mut values = profile.zeros_like();
         for (n, &node) in self.nodes.iter().enumerate() {
             debug_assert_eq!(self.tree.slot(node), Slot::Decision);
             for class in 0..NUM_CLASSES {
@@ -146,6 +157,7 @@ impl Game for ThreeMaxPushFold {
                     Node::BbVsBtnPush => sum(&partials, |p| bb_pair(&p.bb[0], class)),
                     Node::BbVsBtnPushSbCall => sum(&partials, |p| bb_pair(&p.bb[1], class)),
                     Node::BbVsSbPush => sum(&partials, |p| bb_pair(&p.bb[2], class)),
+                    Node::Line(_) => unreachable!("a push/fold tree has only the named nodes"),
                 };
                 values
                     .infoset_mut(n, class)

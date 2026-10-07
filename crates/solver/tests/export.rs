@@ -35,3 +35,31 @@ fn csv_has_one_row_per_node_hand_and_action() {
         assert!((frequency - expected).abs() < 1e-6, "{row}");
     }
 }
+
+#[test]
+fn csv_has_the_limp_and_min_raise_nodes_and_actions() {
+    let spot = Spot::heads_up(12.0, 12.0)
+        .unwrap()
+        .with_limp(true)
+        .with_min_raise(true);
+    let solution = solve(&spot, &SolveOptions::default());
+    let mut csv = Vec::new();
+    solution.write_csv(&mut csv).unwrap();
+    let csv = String::from_utf8(csv).unwrap();
+
+    let actions: usize = solution
+        .nodes()
+        .iter()
+        .map(|&n| solution.actions(n).unwrap().len())
+        .sum();
+    assert_eq!(csv.lines().count(), 1 + 169 * actions);
+    for prefix in [
+        "sb-open,SB,AA,limp,",
+        "sb-open,SB,AA,raise,",
+        "bb-vs-sb-limp,BB,72o,check,",
+        "bb-vs-sb-raise,BB,KK,call,",
+        "sb-vs-sb-limp-bb-raise,SB,QQ,push,",
+    ] {
+        assert!(csv.lines().any(|row| row.starts_with(prefix)), "{prefix}");
+    }
+}

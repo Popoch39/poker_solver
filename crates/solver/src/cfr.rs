@@ -10,7 +10,7 @@
 
 use crate::hand::NUM_CLASSES;
 use crate::spot::Position;
-use crate::tree::Node;
+use crate::tree::{Action, Node};
 
 /// Discount of positive cumulative regrets at iteration t: t^α / (t^α + 1).
 const ALPHA: f64 = 1.5;
@@ -26,31 +26,40 @@ const CHECK_EVERY: u32 = 10;
 #[derive(Clone, Debug)]
 pub(crate) struct Table {
     nodes: Vec<Node>,
+    /// The legal actions of each node.
+    actions: Vec<&'static [Action]>,
     /// Start of each node's block in `values`.
     offsets: Vec<usize>,
     values: Vec<f64>,
 }
 
 impl Table {
-    pub(crate) fn new(nodes: &[Node], fill: f64) -> Table {
+    pub(crate) fn new(nodes: &[Node], actions: &[&'static [Action]], fill: f64) -> Table {
+        debug_assert_eq!(nodes.len(), actions.len());
         let mut offsets = Vec::with_capacity(nodes.len());
         let mut len = 0;
-        for node in nodes {
+        for node_actions in actions {
             offsets.push(len);
-            len += NUM_CLASSES * node.actions().len();
+            len += NUM_CLASSES * node_actions.len();
         }
         Table {
             nodes: nodes.to_vec(),
+            actions: actions.to_vec(),
             offsets,
             values: vec![fill; len],
         }
     }
 
+    /// A table of zeros for the same nodes.
+    pub(crate) fn zeros_like(&self) -> Table {
+        Table::new(&self.nodes, &self.actions, 0.0)
+    }
+
     /// A strategy profile where every information set plays uniformly.
-    pub(crate) fn uniform(nodes: &[Node]) -> Table {
-        let mut table = Table::new(nodes, 0.0);
-        for (n, node) in nodes.iter().enumerate() {
-            let p = 1.0 / node.actions().len() as f64;
+    pub(crate) fn uniform(nodes: &[Node], actions: &[&'static [Action]]) -> Table {
+        let mut table = Table::new(nodes, actions, 0.0);
+        for (n, node_actions) in actions.iter().enumerate() {
+            let p = 1.0 / node_actions.len() as f64;
             for class in 0..NUM_CLASSES {
                 table.infoset_mut(n, class).fill(p);
             }
@@ -62,15 +71,20 @@ impl Table {
         &self.nodes
     }
 
+    /// The legal actions of the node at index `node`.
+    pub(crate) fn actions(&self, node: usize) -> &'static [Action] {
+        self.actions[node]
+    }
+
     /// Values of the information set (node index `node`, class `class`), one
     /// per action of the node.
     pub(crate) fn infoset(&self, node: usize, class: usize) -> &[f64] {
-        let width = self.nodes[node].actions().len();
+        let width = self.actions[node].len();
         &self.values[self.offsets[node] + class * width..][..width]
     }
 
     pub(crate) fn infoset_mut(&mut self, node: usize, class: usize) -> &mut [f64] {
-        let width = self.nodes[node].actions().len();
+        let width = self.actions[node].len();
         &mut self.values[self.offsets[node] + class * width..][..width]
     }
 
@@ -99,18 +113,22 @@ impl Table {
 }
 
 /// A game the engine can solve.
-///
-/// Every player must act at most once on any path of the tree, so that the
-/// counterfactual values of a player's information sets do not depend on that
-/// player's own strategy. This is what lets [`exploitability`] read the best
-/// response straight off the action values.
 pub(crate) trait Game {
     fn nodes(&self) -> &[Node];
+
+    /// The legal actions of each node, indexed like [`Game::nodes`].
+    fn actions(&self) -> &[&'static [Action]];
 
     /// Counterfactual value of every action at every information set under
     /// `profile`: the acting player's expected payoff (in BB per hand) for
     /// taking the action, weighted by chance and by the other players' reach.
     fn action_values(&self, profile: &Table) -> Table;
+
+    /// Each player's best-response gain against `profile`, in BB per hand,
+    /// for the players who have a free decision. A player may only deviate
+    /// at the free (unlocked) nodes: the locked ones (`locks`, laid out as
+    /// in [`solve`]) are part of the game, not of the solution.
+    fn exploitability(&self, profile: &Table, locks: &[Option<&[f64]>]) -> Vec<(Position, f64)>;
 }
 
 /// The average strategy profile after the run, with how long it ran and the
@@ -134,10 +152,10 @@ pub(crate) fn solve(
     target: Option<f64>,
     locks: &[Option<&[f64]>],
 ) -> Run {
-    let nodes = game.nodes();
-    let mut regrets = Table::new(nodes, 0.0);
-    let mut average = Table::new(nodes, 0.0);
-    let mut current = Table::uniform(nodes);
+    let (nodes, actions) = (game.nodes(), game.actions());
+    let mut regrets = Table::new(nodes, actions, 0.0);
+    let mut average = Table::new(nodes, actions, 0.0);
+    let mut current = Table::uniform(nodes, actions);
     current.apply(locks);
     let average_profile = |average: Table| {
         let mut profile = normalize(average);
@@ -181,7 +199,7 @@ pub(crate) fn solve(
             && (t % CHECK_EVERY == 0 || t == iterations)
         {
             let profile = average_profile(average.clone());
-            let exploitability = exploitability(game, &profile, locks);
+            let exploitability = game.exploitability(&profile, locks);
             if exploitability.iter().map(|(_, gain)| gain).sum::<f64>() < target {
                 return Run {
                     profile,
@@ -193,7 +211,7 @@ pub(crate) fn solve(
     }
     let profile = average_profile(average);
     Run {
-        exploitability: exploitability(game, &profile, locks),
+        exploitability: game.exploitability(&profile, locks),
         profile,
         iterations,
     }
@@ -211,10 +229,14 @@ fn normalize(mut sums: Table) -> Table {
     sums
 }
 
-/// Each player's best-response gain against `profile`, in BB per hand, when
-/// it may only deviate at the free (unlocked) nodes: the locked ones are
-/// part of the game, not of the solution.
-pub(crate) fn exploitability(
+/// Each player's best-response gain against `profile`, in BB per hand, for a
+/// game where every player acts at most once on any path of the tree.
+///
+/// The counterfactual values of a player's information sets then do not
+/// depend on that player's own strategy, so the best response can be read
+/// straight off the action values. A game where a player can act again needs
+/// a full best response over the tree instead.
+pub(crate) fn one_shot_exploitability(
     game: &impl Game,
     profile: &Table,
     locks: &[Option<&[f64]>],
