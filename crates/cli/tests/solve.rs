@@ -119,6 +119,90 @@ fn solve_stops_at_the_iteration_count_when_the_target_is_zero() {
 }
 
 #[test]
+fn solve_with_limp_and_min_raise_prints_a_grid_per_action_and_the_realization_factors() {
+    let out = stdout(&nitro(&[
+        "solve",
+        "--stacks",
+        "15,15,15",
+        "--limp",
+        "--min-raise",
+        "--iterations",
+        "20",
+    ]));
+    assert!(
+        out.contains("3-max push/fold + limp + min-raise, stacks BTN 15 BB / SB 15 BB / BB 15 BB"),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "realization factors: heads-up OOP 0.9 / IP 1.1, three-way SB 0.9 / BB 1 / BTN 1.1"
+        ),
+        "{out}"
+    );
+    for heading in [
+        "BTN open: limp",
+        "BTN open: raise",
+        "BTN open: push",
+        "BB vs BTN limp and SB limp: raise",
+        "BB vs BTN limp and SB limp: push",
+        "BTN vs BTN limp and SB push: call",
+    ] {
+        assert!(out.contains(heading), "{heading}\n{out}");
+    }
+    // The passive action (fold, check) has no grid of its own.
+    assert!(!out.contains("BTN open: fold"), "{out}");
+    assert!(!out.contains(": check"), "{out}");
+}
+
+#[test]
+fn solve_takes_realization_factors_per_spot_type() {
+    let out = stdout(&nitro(&[
+        "solve",
+        "--stacks",
+        "12,12",
+        "--limp",
+        "--realization-oop",
+        "0.8",
+        "--realization-ip",
+        "1.2",
+        "--realization-3way",
+        "0.85,1,1.15",
+        "--node",
+        "bb-vs-sb-limp",
+        "--hand",
+        "AA",
+    ]));
+    assert!(out.starts_with("AA at BB vs SB limp: check "), "{out}");
+    assert!(out.contains("%, push "), "{out}");
+
+    let output = nitro(&[
+        "solve",
+        "--stacks",
+        "12,12",
+        "--limp",
+        "--realization-ip",
+        "-1",
+    ]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("realization factor"));
+    let output = nitro(&["solve", "--stacks", "12,12", "--realization-3way", "1,1"]);
+    assert!(!output.status.success());
+}
+
+#[test]
+fn solve_prints_the_ranges_of_one_node() {
+    let out = stdout(&nitro(&[
+        "solve", "--stacks", "12,12", "--limp", "--node", "sb-open",
+    ]));
+    assert!(out.contains("exploitability"), "{out}");
+    assert!(out.contains("SB open: limp"), "{out}");
+    assert!(out.contains("SB open: push"), "{out}");
+    assert!(!out.contains("BB vs SB limp"), "{out}");
+    let header = "     A   K   Q   J   T   9   8   7   6   5   4   3   2";
+    assert_eq!(out.matches(header).count(), 2, "{out}");
+}
+
+#[test]
 fn solve_exports_the_solution_as_csv() {
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("solve-csv");
     std::fs::create_dir_all(&dir).unwrap();
