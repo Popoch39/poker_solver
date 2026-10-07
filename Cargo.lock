@@ -1070,6 +1070,8 @@ dependencies = [
  "async-trait",
  "chrono",
  "nitro-hh",
+ "nitro-population",
+ "nitro-solver",
  "rand",
  "rayon",
  "rs_poker",
