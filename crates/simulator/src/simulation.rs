@@ -2,11 +2,13 @@
 
 use std::sync::Arc;
 
+use nitro_hh::{BuyIn, Euros, Hand, TournamentInfo};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use rayon::prelude::*;
 
 use crate::game::NitroGame;
+use crate::history;
 use crate::prize::PrizeTable;
 use crate::seat::SeatStrategy;
 use crate::structure::Structure;
@@ -111,13 +113,45 @@ pub fn simulate(config: &SimulationConfig) -> Report {
 }
 
 fn play_game(config: &SimulationConfig, index: u64) -> GameOutcome {
-    let mut rng = StdRng::seed_from_u64(game_seed(config.seed, index));
-    let multiplier = config.prize_table.draw(&mut rng);
-    let mut game = NitroGame::new(config.structure.clone(), config.seats.clone(), rng.random());
+    let (multiplier, mut game) = new_game(config, index);
     GameOutcome {
         multiplier,
         places: game.play_to_end(),
     }
+}
+
+/// Game `index` of the simulation, and its multiplier.
+fn new_game(config: &SimulationConfig, index: u64) -> (u32, NitroGame) {
+    let mut rng = StdRng::seed_from_u64(game_seed(config.seed, index));
+    let multiplier = config.prize_table.draw(&mut rng);
+    let game = NitroGame::new(config.structure.clone(), config.seats.clone(), rng.random());
+    (multiplier, game)
+}
+
+/// The hands of game `index` of the simulation, the very game [`simulate`]
+/// plays and counts, written down by `hero` (the table seat whose cards are
+/// dealt face up, if any) as the hand histories of one tournament, ready for
+/// [`nitro_hh::to_ohh`].
+pub fn hand_histories(config: &SimulationConfig, index: u64, hero: Option<usize>) -> Vec<Hand> {
+    let (_, mut game) = new_game(config, index);
+    let table = &config.prize_table;
+    let rake = (table.buy_in_cents() * table.rake_percent()).div_ceil(100);
+    let tournament = TournamentInfo {
+        id: format!("{}-{index}", config.seed),
+        name: history::TABLE_NAME.into(),
+        buy_in: BuyIn {
+            prize: Euros::from_cents(u64::from(table.buy_in_cents() - rake)),
+            rake: Euros::from_cents(u64::from(rake)),
+        },
+    };
+    let mut hands = Vec::new();
+    while game.play_hand().is_some() {
+        let mut hand = game.hand_history(hero).expect("a hand is over");
+        hand.game_number = format!("{}-{}", tournament.id, hand.game_number);
+        hand.tournament = Some(tournament.clone());
+        hands.push(hand);
+    }
+    hands
 }
 
 /// SplitMix64 of the seed and the game index: decorrelated per-game seeds.

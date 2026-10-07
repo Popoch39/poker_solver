@@ -1,6 +1,7 @@
 //! Expresso Nitro tournament simulator.
 
 mod game;
+mod history;
 mod prize;
 mod seat;
 mod simulation;
@@ -13,6 +14,6 @@ pub use seat::{
     Card, Decision, ParseTrivialBotError, PlayerView, Position, SeatStrategy, SeatView, Street,
     Suit, TrivialBot, Value,
 };
-pub use simulation::{Report, SeatReport, SimulationConfig, simulate};
+pub use simulation::{Report, SeatReport, SimulationConfig, hand_histories, simulate};
 pub use structure::{BlindLevel, NITRO_BLIND_LEVELS, Structure};
 pub use table::{TableSeat, TableView};
