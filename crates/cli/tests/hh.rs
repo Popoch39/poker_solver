@@ -24,3 +24,25 @@ fn hh_summarises_a_folder() {
     assert!(out.contains("3 hands"), "{out}");
     assert!(out.contains("0 errors"), "{out}");
 }
+
+#[test]
+fn hh_exports_hands_to_an_ohh_file_it_can_read_back() {
+    let ohh = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("fixtures.ohh");
+    let _ = std::fs::remove_file(&ohh);
+    let fixtures = fixtures();
+    let export = nitro(&[
+        "hh",
+        fixtures.to_str().unwrap(),
+        "--ohh",
+        ohh.to_str().unwrap(),
+    ]);
+    assert!(export.status.success());
+    let out = String::from_utf8(export.stdout).unwrap();
+    assert!(out.contains("3 hands written to"), "{out}");
+
+    let output = nitro(&["hh", ohh.to_str().unwrap()]);
+    let out = String::from_utf8(output.stdout).unwrap();
+    assert!(out.contains("1 files"), "{out}");
+    assert!(out.contains("3 hands"), "{out}");
+    assert!(out.contains("0 errors"), "{out}");
+}

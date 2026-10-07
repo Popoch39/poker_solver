@@ -39,9 +39,13 @@ enum Command {
     /// Parse Winamax Expresso Nitro hand histories and summaries, and report
     /// what was read and what was not.
     Hh {
-        /// Hand-history or summary files, or folders searched for `.txt` files.
+        /// Hand-history, summary or Open Hand History (`.ohh`) files, or
+        /// folders searched for `.txt` and `.ohh` files.
         #[arg(required = true)]
         paths: Vec<PathBuf>,
+        /// Also write every parsed hand to this Open Hand History file.
+        #[arg(long, value_name = "FILE")]
+        ohh: Option<PathBuf>,
     },
 }
 
@@ -53,7 +57,7 @@ fn main() -> ExitCode {
             hand,
             node,
         } => solve_command(stacks, iterations, hand, node),
-        Command::Hh { paths } => hh::run(&paths),
+        Command::Hh { paths, ohh } => hh::run(&paths, ohh.as_deref()),
     }
 }
 
