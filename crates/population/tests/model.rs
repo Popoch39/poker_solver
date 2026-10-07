@@ -6,6 +6,7 @@ use nitro_hh::Street;
 use nitro_population::{
     Action, HandClass, Node, OffTreeAction, Players, PopulationModel, Position, StackBucket,
 };
+use nitro_solver::Spot;
 use support::{BB, BTN, HandBuilder, SB};
 
 /// 15 BB each, the starting stacks of an Expresso Nitro.
@@ -324,4 +325,68 @@ fn hands_shown_at_showdown_estimate_the_range_of_each_action() {
     );
     let sb = model.get(Node::SbVsBtnPush, StackBucket::of(15.0)).unwrap();
     assert_eq!(sb.known_hands(Action::Call).count(class("QQ")), 1);
+}
+
+/// Three BTN decisions (one push), two SB opens (both folds), one SB and
+/// one BB decision facing the BTN's push.
+fn lockable_model() -> PopulationModel {
+    let hands = [
+        HandBuilder::three_handed(START).push(BTN).fold(SB).fold(BB),
+        HandBuilder::three_handed(START).fold(BTN).fold(SB),
+        HandBuilder::three_handed(START).fold(BTN).fold(SB),
+    ]
+    .map(HandBuilder::build);
+    PopulationModel::build(&hands, Players::Opponents)
+}
+
+#[test]
+fn the_locked_range_is_the_strongest_hands_up_to_the_observed_frequency() {
+    let model = lockable_model();
+    let stats = model.get(Node::BtnOpen, StackBucket::of(15.0)).unwrap();
+
+    let push = |hand| stats.strategy(hand).frequency(Action::Push);
+    // A third of the combos push: the strongest by equity against a random
+    // hand, so AA, AKs, TT and K9o do, 72o, 32o and J4o do not.
+    let combos: f64 = HandClass::all()
+        .map(|hand| f64::from(hand.combos()) * push(hand))
+        .sum();
+    assert!((combos / 1326.0 - 1.0 / 3.0).abs() < 1e-12, "{combos}");
+    for hand in ["AA", "AKs", "TT", "K9o"] {
+        assert_eq!(push(class(hand)), 1.0, "{hand}");
+    }
+    for hand in ["72o", "32o", "J4o"] {
+        assert_eq!(push(class(hand)), 0.0, "{hand}");
+    }
+    // Each class's frequencies make a whole strategy.
+    for hand in HandClass::all() {
+        let strategy = stats.strategy(hand);
+        let total = strategy.frequency(Action::Fold) + strategy.frequency(Action::Push);
+        assert!((total - 1.0).abs() < 1e-12, "{hand}: {strategy:?}");
+    }
+}
+
+#[test]
+fn only_the_opponents_nodes_sampled_enough_at_the_spots_stacks_are_locked() {
+    let model = lockable_model();
+    let spot = || Spot::three_max(15.0, 15.0, 15.0).unwrap();
+
+    let locked = model.lock(spot(), Position::Bb, 2);
+    assert!(locked.is_locked(Node::BtnOpen));
+    assert!(locked.is_locked(Node::SbOpen));
+    // One decision only, below the threshold.
+    assert!(!locked.is_locked(Node::SbVsBtnPush));
+    // The hero's own nodes are what the solver exploits with.
+    assert!(!locked.is_locked(Node::BbVsBtnPush));
+
+    let locked = model.lock(spot(), Position::Btn, 2);
+    assert!(!locked.is_locked(Node::BtnOpen));
+    assert!(locked.is_locked(Node::SbOpen));
+
+    let locked = model.lock(spot(), Position::Bb, 4);
+    assert!(!locked.is_locked(Node::BtnOpen));
+    assert!(!locked.is_locked(Node::SbOpen));
+
+    // Nothing was observed at 5 BB effective.
+    let short = model.lock(Spot::three_max(5.0, 15.0, 15.0).unwrap(), Position::Bb, 1);
+    assert!(!short.is_locked(Node::BtnOpen));
 }

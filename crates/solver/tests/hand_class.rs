@@ -30,6 +30,20 @@ fn combos_depend_on_pair_suited_or_offsuit() {
 }
 
 #[test]
+fn all_in_equity_against_a_random_hand_matches_published_values() {
+    // Published preflop equities against one random hand (ties split).
+    for (hand, published) in [
+        ("AA", 0.852),
+        ("AKs", 0.670),
+        ("AKo", 0.654),
+        ("32o", 0.323),
+    ] {
+        let equity = hand.parse::<HandClass>().unwrap().equity_vs_random();
+        assert!((equity - published).abs() < 0.003, "{hand}: {equity}");
+    }
+}
+
+#[test]
 fn grid_places_pairs_on_the_diagonal_and_suited_hands_above_it() {
     let at = |row, col| HandClass::at_grid(row, col).to_string();
     assert_eq!(at(0, 0), "AA");

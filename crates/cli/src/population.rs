@@ -22,19 +22,25 @@ pub struct Args {
 }
 
 pub fn run(args: &Args) -> ExitCode {
-    let mut errors = 0;
-    let mut hands = Vec::new();
-    for path in &args.paths {
-        let batch = parse_path(path);
-        errors += batch.errors.len();
-        hands.extend(batch.tournaments.into_iter().flat_map(|t| t.hands));
-    }
-    let model = PopulationModel::build(&hands, Players::Opponents);
+    let (model, errors) = build(&args.paths);
     print_model(&model, errors);
     if let Some(node) = args.range {
         print_ranges(&model, node);
     }
     ExitCode::SUCCESS
+}
+
+/// The population model of the opponents in the histories at `paths`, and
+/// how many files or hands could not be read.
+pub fn build(paths: &[PathBuf]) -> (PopulationModel, usize) {
+    let mut errors = 0;
+    let mut hands = Vec::new();
+    for path in paths {
+        let batch = parse_path(path);
+        errors += batch.errors.len();
+        hands.extend(batch.tournaments.into_iter().flat_map(|t| t.hands));
+    }
+    (PopulationModel::build(&hands, Players::Opponents), errors)
 }
 
 /// The action a range is shown for: push or call, the last one of a node.

@@ -72,6 +72,25 @@ impl PopulationModel {
         })
     }
 
+    /// Locks into `spot` the nodes where the population plays against
+    /// `hero` (node-locking): every node of another position observed at
+    /// least `min_sample` times in the bucket of the spot's effective stack,
+    /// on [`NodeStats::strategy`]. The hero's nodes stay free, for the
+    /// solver to find the exploit; so do the nodes sampled too little to be
+    /// trusted.
+    pub fn lock(&self, spot: Spot, hero: Position, min_sample: u32) -> Spot {
+        let bucket = StackBucket::of(spot.effective_stack());
+        TREE_ORDER
+            .into_iter()
+            .filter(|node| node.actor() != hero)
+            .fold(spot, |spot, node| match self.get(node, bucket) {
+                Some(stats) if stats.sample() >= min_sample => spot
+                    .lock(node, |hand| stats.strategy(hand))
+                    .expect("a population strategy is a valid lock"),
+                _ => spot,
+            })
+    }
+
     /// Decisions that are not part of the push/fold tree.
     pub fn off_tree(&self) -> &OffTree {
         &self.off_tree
