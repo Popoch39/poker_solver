@@ -70,6 +70,10 @@ _Éviter_ : hand history (en prose), log
 Fréquences d'action agrégées par nœud et par tranche de tapis, avec leur taille d'échantillon, tirées des historiques de mains sans tenir compte des pseudos.
 _Éviter_ : profil, HUD, stats joueurs
 
+**Tranche de tapis** :
+Intervalle de tapis effectif (en BB, borne haute incluse, ex. 8–10 BB) sur lequel le modèle de population regroupe les décisions d'un même nœud.
+_Éviter_ : bucket (en prose), palier
+
 **Bot-population** :
 Joueur simulé qui agit selon les fréquences du modèle de population.
 _Éviter_ : adversaire virtuel, IA
