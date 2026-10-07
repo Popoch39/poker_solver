@@ -1,3 +1,4 @@
 /target/
+/.claude/worktrees/
 # Local hand-history datasets (NitroVariance, personal histories): never committed or redistributed.
 /data/
