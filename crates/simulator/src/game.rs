@@ -4,7 +4,7 @@
 //! rising blinds, button moves, eliminations and places. rs_poker's own
 //! `SingleTableTournament` cannot do it (see ADR 0002).
 //!
-//! Every arena seat suspends the hand at its decision (see ADR 0003), so the
+//! Every arena seat suspends the hand at its decision (see ADR 0004), so the
 //! game can stop there and wait for an answer: from the seat's strategy when
 //! it has one, from outside (a human through a client) when it is external.
 //! Whole hands and whole games are only loops over these steps.
@@ -440,7 +440,7 @@ impl NitroGame {
     ///
     /// Seats decide only when stepped, so the arena never needs a runtime:
     /// each poll runs synchronously to the next suspended seat (see ADR
-    /// 0003).
+    /// 0004).
     fn resume(&mut self) {
         let hand = self.hand.as_mut().expect("a hand is running");
         let run = hand.run.as_mut().expect("the hand is not over");
