@@ -1,0 +1,26 @@
+[package]
+name = "nitro-bot"
+description = "Clicker bot for the local client: finds its window, captures it and reads the table"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "nitro-bot"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+nitro-local-client.workspace = true
+nitro-simulator.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tiny-skia.workspace = true
+
+[lints]
+workspace = true
