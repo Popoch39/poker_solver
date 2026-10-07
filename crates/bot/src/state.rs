@@ -1,7 +1,12 @@
 //! What the bot reads off the table.
 
-use nitro_local_client::HERO;
-use nitro_simulator::{Card, Decision, Position};
+use nitro_local_client::{HERO, chips};
+use nitro_simulator::{Card, Decision, Position, TableView};
+
+/// `amount` at the precision the client writes it.
+fn displayed(amount: f32) -> f32 {
+    chips(amount).parse().expect("the client writes numbers")
+}
 
 /// The game as the local client draws it, read from its pixels.
 #[derive(Debug, Clone, PartialEq)]
@@ -56,6 +61,50 @@ pub enum Cards {
 }
 
 impl TableState {
+    /// What the client draws for `view`: the state a perfect reader reads.
+    pub fn drawn(view: &TableView) -> Self {
+        let seats = std::array::from_fn(|seat| {
+            let shown = view.seats[seat];
+            let out = shown.stack == 0.0 && shown.place.is_some();
+            let won = view.hand_over && shown.won > 0.0;
+            SeatState {
+                position: shown.position,
+                stack: displayed(shown.stack),
+                all_in: shown.all_in && shown.stack == 0.0 && !out,
+                place: shown.place.filter(|_| out),
+                street_bet: if won {
+                    0.0
+                } else {
+                    displayed(shown.street_bet)
+                },
+                won: if won { displayed(shown.won) } else { 0.0 },
+                cards: match (shown.in_hand, shown.hole_cards) {
+                    (false, _) => Cards::None,
+                    (true, None) => Cards::Hidden,
+                    (true, Some(cards)) => Cards::Shown(cards),
+                },
+            }
+        });
+        let call_button = view.legal.contains(&Decision::Call);
+        Self {
+            hand_number: view.hand_number,
+            level: view.level,
+            small_blind: displayed(view.small_blind),
+            big_blind: displayed(view.big_blind),
+            button: view.button,
+            board: view.board.clone(),
+            pot: displayed(view.pot),
+            to_act: view.to_act,
+            legal: view.legal.clone(),
+            to_call: if call_button {
+                displayed(view.to_call)
+            } else {
+                0.0
+            },
+            seats,
+        }
+    }
+
     pub fn hero_cards(&self) -> Option<[Card; 2]> {
         match self.seats[HERO].cards {
             Cards::Shown(cards) => Some(cards),

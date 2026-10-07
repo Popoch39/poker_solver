@@ -265,7 +265,7 @@ impl TableReader {
         (0..3)
             .filter(|&seat| {
                 let crop = frame.crop(region(&LAYOUT.seats[seat]));
-                errors(crop.rgba(), template(&self.markers[seat]).rgba()) <= MAX_PIXEL_ERRORS
+                matches(crop.rgba(), template(&self.markers[seat]).rgba())
             })
             .collect()
     }
@@ -277,7 +277,7 @@ impl TableReader {
         }
         self.cards
             .iter()
-            .find(|(template, _)| errors(crop.rgba(), template) <= MAX_PIXEL_ERRORS)
+            .find(|(template, _)| matches(crop.rgba(), template))
             .map_or(Slot::Empty, |(_, &slot)| slot)
     }
 
@@ -288,10 +288,12 @@ impl TableReader {
     }
 }
 
-/// The pixels of two same-sized RGBA images that differ.
-fn errors(image: &[u8], template: &[u8]) -> usize {
+/// Whether two same-sized RGBA images differ by at most
+/// [`MAX_PIXEL_ERRORS`] pixels.
+fn matches(image: &[u8], template: &[u8]) -> bool {
     let (image, _) = image.as_chunks::<4>();
     let (template, _) = template.as_chunks::<4>();
+    // Stops at the first pixel too many: most templates differ at once.
     image
         .iter()
         .zip(template)
@@ -300,7 +302,8 @@ fn errors(image: &[u8], template: &[u8]) -> usize {
                 .zip(*b)
                 .any(|(a, b)| a.abs_diff(*b) > PIXEL_TOLERANCE)
         })
-        .count()
+        .nth(MAX_PIXEL_ERRORS)
+        .is_none()
 }
 
 fn unexpected(region: &str, text: &str) -> ReadError {
