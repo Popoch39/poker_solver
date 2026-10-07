@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
+use rs_poker::open_hand_history::HandReader;
+
 use crate::hand::Hand;
+use crate::ohh_convert::from_ohh;
 use crate::parse::{ErrorKind, ParseError, WINAMAX_HEADER, parse_hands};
 use crate::summary::{SUMMARY_HEADER, Summary, parse_summary};
 
@@ -36,14 +40,15 @@ pub struct FileError {
     pub error: ParseError,
 }
 
-/// Parses a hand-history or summary file, or every `.txt` file under a
-/// folder. Unreadable files and bad hands are listed in [`Batch::errors`]
-/// and do not stop the rest.
+/// Parses a Winamax hand-history or summary file (`.txt`), an Open Hand
+/// History file (`.ohh`), or every such file under a folder. Unreadable
+/// files and bad hands are listed in [`Batch::errors`] and do not stop the
+/// rest.
 pub fn parse_path(path: &Path) -> Batch {
     let mut files = Vec::new();
     let mut batch = Batch::default();
     if path.is_dir() {
-        collect_txt_files(path, &mut files, &mut batch.errors);
+        collect_files(path, &mut files, &mut batch.errors);
         files.sort();
     } else {
         files.push(path.to_path_buf());
@@ -69,7 +74,9 @@ pub fn parse_path(path: &Path) -> Batch {
             }
         };
         batch.files += 1;
-        if !text.starts_with(WINAMAX_HEADER) {
+        let hands = if is_ohh(&path) {
+            read_ohh(text)
+        } else if !text.starts_with(WINAMAX_HEADER) {
             // Not even Winamax: a stray file in the folder, not a damaged one.
             batch.errors.push(FileError {
                 path,
@@ -80,8 +87,7 @@ pub fn parse_path(path: &Path) -> Batch {
                 },
             });
             continue;
-        }
-        if text.starts_with(SUMMARY_HEADER) {
+        } else if text.starts_with(SUMMARY_HEADER) {
             match parse_summary(&text) {
                 Ok(summary) => {
                     let index = tournament(&mut batch, &summary.tournament_id);
@@ -90,8 +96,10 @@ pub fn parse_path(path: &Path) -> Batch {
                 Err(error) => batch.errors.push(FileError { path, error }),
             }
             continue;
-        }
-        for result in parse_hands(&text) {
+        } else {
+            parse_hands(&text)
+        };
+        for result in hands {
             match result {
                 Ok(hand) => {
                     let id = hand.tournament.as_ref().map_or("", |t| t.id.as_str());
@@ -108,7 +116,27 @@ pub fn parse_path(path: &Path) -> Batch {
     batch
 }
 
-fn collect_txt_files(dir: &Path, files: &mut Vec<PathBuf>, errors: &mut Vec<FileError>) {
+fn is_ohh(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == "ohh")
+}
+
+/// The hands of an Open Hand History file, such as the simulator writes.
+fn read_ohh(text: String) -> Vec<Result<Hand, ParseError>> {
+    HandReader::from_reader(Cursor::new(text.into_bytes()))
+        .enumerate()
+        .map(|(index, history)| {
+            let malformed = |reason: String| ParseError {
+                line: 0,
+                kind: ErrorKind::Malformed,
+                reason: format!("OHH hand {}: {reason}", index + 1),
+            };
+            let history = history.map_err(|e| malformed(e.to_string()))?;
+            from_ohh(&history).map_err(|e| malformed(e.to_string()))
+        })
+        .collect()
+}
+
+fn collect_files(dir: &Path, files: &mut Vec<PathBuf>, errors: &mut Vec<FileError>) {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error) => {
@@ -125,8 +153,8 @@ fn collect_txt_files(dir: &Path, files: &mut Vec<PathBuf>, errors: &mut Vec<File
             }
         };
         if path.is_dir() {
-            collect_txt_files(&path, files, errors);
-        } else if path.extension().is_some_and(|ext| ext == "txt") {
+            collect_files(&path, files, errors);
+        } else if is_ohh(&path) || path.extension().is_some_and(|ext| ext == "txt") {
             files.push(path);
         }
     }
