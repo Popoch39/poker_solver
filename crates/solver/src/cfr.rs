@@ -78,6 +78,24 @@ impl Table {
         let num_nodes = self.nodes.len();
         (0..num_nodes).flat_map(|n| (0..NUM_CLASSES).map(move |c| (n, c)))
     }
+
+    /// The information sets of the nodes that are not locked.
+    fn free_infosets<'a>(
+        &self,
+        locks: &'a [Option<&[f64]>],
+    ) -> impl Iterator<Item = (usize, usize)> + use<'a> {
+        self.infosets().filter(|&(n, _)| locks[n].is_none())
+    }
+
+    /// Overwrites every locked node with its locked frequencies.
+    fn apply(&mut self, locks: &[Option<&[f64]>]) {
+        for (n, lock) in locks.iter().enumerate() {
+            if let Some(frequencies) = lock {
+                let start = self.offsets[n];
+                self.values[start..start + frequencies.len()].copy_from_slice(frequencies);
+            }
+        }
+    }
 }
 
 /// A game the engine can solve.
@@ -105,17 +123,33 @@ pub(crate) struct Run {
 
 /// Runs DCFR for `iterations`, or until the average strategy's exploitability
 /// falls below `target` (BB per hand), whichever comes first.
-pub(crate) fn solve(game: &impl Game, iterations: u32, target: Option<f64>) -> Run {
+///
+/// `locks` has one entry per node of the game: a locked node (node-locking)
+/// plays the given frequencies, laid out like its block of a [`Table`], at
+/// every iteration and in the result. It has no regrets and no
+/// best-response gain: only the free nodes are solved.
+pub(crate) fn solve(
+    game: &impl Game,
+    iterations: u32,
+    target: Option<f64>,
+    locks: &[Option<&[f64]>],
+) -> Run {
     let nodes = game.nodes();
     let mut regrets = Table::new(nodes, 0.0);
     let mut average = Table::new(nodes, 0.0);
     let mut current = Table::uniform(nodes);
+    current.apply(locks);
+    let average_profile = |average: Table| {
+        let mut profile = normalize(average);
+        profile.apply(locks);
+        profile
+    };
     for t in 1..=iterations {
         let values = game.action_values(&current);
         let tf = f64::from(t);
         let positive_discount = tf.powf(ALPHA) / (tf.powf(ALPHA) + 1.0);
         let weight = tf.powi(GAMMA);
-        for (n, c) in current.infosets() {
+        for (n, c) in current.free_infosets(locks) {
             let sigma = current.infoset(n, c);
             let cv = values.infoset(n, c);
             let node_value: f64 = sigma.iter().zip(cv).map(|(s, v)| s * v).sum();
@@ -131,7 +165,7 @@ pub(crate) fn solve(game: &impl Game, iterations: u32, target: Option<f64>) -> R
                 *a += weight * s;
             }
         }
-        for (n, c) in current.infosets() {
+        for (n, c) in current.free_infosets(locks) {
             let regret = regrets.infoset(n, c);
             let total: f64 = regret.iter().map(|r| r.max(0.0)).sum();
             let width = regret.len() as f64;
@@ -146,8 +180,8 @@ pub(crate) fn solve(game: &impl Game, iterations: u32, target: Option<f64>) -> R
         if let Some(target) = target
             && (t % CHECK_EVERY == 0 || t == iterations)
         {
-            let profile = normalize(average.clone());
-            let exploitability = exploitability(game, &profile);
+            let profile = average_profile(average.clone());
+            let exploitability = exploitability(game, &profile, locks);
             if exploitability.iter().map(|(_, gain)| gain).sum::<f64>() < target {
                 return Run {
                     profile,
@@ -157,9 +191,9 @@ pub(crate) fn solve(game: &impl Game, iterations: u32, target: Option<f64>) -> R
             }
         }
     }
-    let profile = normalize(average);
+    let profile = average_profile(average);
     Run {
-        exploitability: exploitability(game, &profile),
+        exploitability: exploitability(game, &profile, locks),
         profile,
         iterations,
     }
@@ -177,11 +211,17 @@ fn normalize(mut sums: Table) -> Table {
     sums
 }
 
-/// Each player's best-response gain against `profile`, in BB per hand.
-pub(crate) fn exploitability(game: &impl Game, profile: &Table) -> Vec<(Position, f64)> {
+/// Each player's best-response gain against `profile`, in BB per hand, when
+/// it may only deviate at the free (unlocked) nodes: the locked ones are
+/// part of the game, not of the solution.
+pub(crate) fn exploitability(
+    game: &impl Game,
+    profile: &Table,
+    locks: &[Option<&[f64]>],
+) -> Vec<(Position, f64)> {
     let values = game.action_values(profile);
     let mut gains: Vec<(Position, f64)> = Vec::new();
-    for (n, c) in profile.infosets() {
+    for (n, c) in profile.free_infosets(locks) {
         let cv = values.infoset(n, c);
         let played: f64 = profile
             .infoset(n, c)

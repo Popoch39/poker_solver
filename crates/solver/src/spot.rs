@@ -1,5 +1,9 @@
 use std::fmt;
 
+use crate::hand::{HandClass, NUM_CLASSES};
+use crate::solution::Strategy;
+use crate::tree::Node;
+
 /// A seat at the table, named by its preflop position, in the order the
 /// players act preflop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -39,7 +43,8 @@ impl fmt::Display for Position {
     }
 }
 
-/// A decision situation to solve: who is at the table and with which stacks.
+/// A decision situation to solve: who is at the table and with which stacks,
+/// and which nodes, if any, are locked on a given strategy.
 ///
 /// Stacks are in big blinds, measured before the blinds are posted. A stack
 /// may be smaller than its blind: the player then posts it all and is all-in
@@ -49,15 +54,29 @@ impl fmt::Display for Position {
 pub struct Spot {
     /// Indexed by [`Position::index`]; a heads-up spot has no BTN (stack 0).
     stacks: [f64; 3],
+    locks: Vec<Lock>,
 }
 
-/// Error returned when a spot cannot be built from the given stacks.
+/// A node fixed on a strategy: the frequency of each of the node's actions
+/// (in [`Node::actions`] order) for every hand class, class by class.
+#[derive(Clone, Debug, PartialEq)]
+struct Lock {
+    node: Node,
+    frequencies: Vec<f64>,
+}
+
+/// Error returned when a spot cannot be built from the given stacks, or a
+/// node cannot be locked on the given strategy.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SpotError {
     #[error("the {position} stack must be a positive number of BB, got {stack}")]
     InvalidStack { position: Position, stack: f64 },
     #[error("a spot needs at least two players with chips")]
     TooFewPlayers,
+    #[error(
+        "the locked strategy of {hand} at {node} must give the node's actions frequencies between 0 and 1 that sum to 1"
+    )]
+    InvalidLock { node: Node, hand: HandClass },
 }
 
 impl Spot {
@@ -72,6 +91,7 @@ impl Spot {
         }
         Ok(Spot {
             stacks: [0.0, sb_stack, bb_stack],
+            locks: Vec::new(),
         })
     }
 
@@ -95,7 +115,10 @@ impl Spot {
             .collect::<Vec<_>>()[..]
         {
             [sb, bb] => Spot::heads_up(sb, bb),
-            [_, _, _] => Ok(Spot { stacks }),
+            [_, _, _] => Ok(Spot {
+                stacks,
+                locks: Vec::new(),
+            }),
             _ => Err(SpotError::TooFewPlayers),
         }
     }
@@ -106,6 +129,12 @@ impl Spot {
             .into_iter()
             .filter(|&p| self.stack(p) > 0.0)
             .collect()
+    }
+
+    /// Whether both spots seat the same stacks, whatever their locks: their
+    /// trees are then the same.
+    pub(crate) fn same_table(&self, other: &Spot) -> bool {
+        self.stacks == other.stacks
     }
 
     pub(crate) fn is_heads_up(&self) -> bool {
@@ -124,5 +153,49 @@ impl Spot {
             .into_iter()
             .map(|p| self.stack(p))
             .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Locks `node` on `strategy`, the frequencies each hand class plays
+    /// there (node-locking): the solver keeps them exactly as given and
+    /// re-solves every other node around them. Locking a node again replaces
+    /// its strategy; a node outside the spot's tree is never played, so its
+    /// lock has no effect.
+    pub fn lock(
+        mut self,
+        node: Node,
+        mut strategy: impl FnMut(HandClass) -> Strategy,
+    ) -> Result<Spot, SpotError> {
+        let mut frequencies = Vec::with_capacity(NUM_CLASSES * node.actions().len());
+        for hand in HandClass::all() {
+            let strategy = strategy(hand);
+            let legal = strategy.iter().all(|(a, _)| node.actions().contains(&a));
+            let row: Vec<f64> = node
+                .actions()
+                .iter()
+                .map(|&a| strategy.frequency(a))
+                .collect();
+            let in_range = row.iter().all(|f| (0.0..=1.0).contains(f));
+            if !legal || !in_range || (row.iter().sum::<f64>() - 1.0).abs() > 1e-9 {
+                return Err(SpotError::InvalidLock { node, hand });
+            }
+            frequencies.extend(row);
+        }
+        self.locks.retain(|lock| lock.node != node);
+        self.locks.push(Lock { node, frequencies });
+        Ok(self)
+    }
+
+    /// Whether `node` is locked on a given strategy.
+    pub fn is_locked(&self, node: Node) -> bool {
+        self.locked(node).is_some()
+    }
+
+    /// The locked frequencies of `node`, laid out class by class, or `None`
+    /// if the node is free.
+    pub(crate) fn locked(&self, node: Node) -> Option<&[f64]> {
+        self.locks
+            .iter()
+            .find(|lock| lock.node == node)
+            .map(|lock| &lock.frequencies[..])
     }
 }

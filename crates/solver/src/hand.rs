@@ -1,6 +1,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use crate::equity::HeadsUpEquity;
+
 /// Rank characters from the highest (ace) to the lowest (deuce), in the order
 /// of the 13×13 grid rows and columns.
 const RANKS: &[u8; 13] = b"AKQJT98765432";
@@ -43,6 +45,16 @@ impl HandClass {
             std::cmp::Ordering::Less => 4,
             std::cmp::Ordering::Greater => 12,
         }
+    }
+
+    /// All-in equity against one random hand, card removal included: the
+    /// usual measure of preflop hand strength.
+    pub fn equity_vs_random(self) -> f64 {
+        let table = HeadsUpEquity::get();
+        let row = self.index() * NUM_CLASSES..(self.index() + 1) * NUM_CLASSES;
+        let (weight, equity) = (&table.weight[row.clone()], &table.equity[row]);
+        let total: f64 = weight.iter().sum();
+        weight.iter().zip(equity).map(|(w, e)| w * e).sum::<f64>() / total
     }
 
     pub(crate) fn index(self) -> usize {
