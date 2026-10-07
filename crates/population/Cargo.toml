@@ -1,0 +1,17 @@
+[package]
+name = "nitro-population"
+description = "Population model: action frequencies of Expresso Nitro hand histories per push/fold node and stack bucket"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+nitro-hh.workspace = true
+nitro-solver.workspace = true
+
+[dev-dependencies]
+chrono.workspace = true
+
+[lints]
+workspace = true

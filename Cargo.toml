@@ -12,6 +12,7 @@ publish = false
 nitro-solver = { path = "crates/solver" }
 nitro-hh = { path = "crates/hh" }
 nitro-simulator = { path = "crates/simulator" }
+nitro-population = { path = "crates/population" }
 nitro-local-client = { path = "crates/local-client" }
 async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
