@@ -3,65 +3,81 @@
 use crate::cfr::{Game, Table};
 use crate::equity::HeadsUpEquity;
 use crate::hand::NUM_CLASSES;
-use crate::spot::Spot;
+use crate::push_fold::{PushFold, SB_BB, Slot};
+use crate::spot::{Position, Spot};
 use crate::tree::Node;
 
-const SB_BLIND: f64 = 0.5;
-const BB_BLIND: f64 = 1.0;
-
-const NODES: [Node; 2] = [Node::SbOpen, Node::BbVsSbPush];
-const SB_OPEN: usize = 0;
-const BB_VS_PUSH: usize = 1;
 const FOLD: usize = 0;
 const ALL_IN: usize = 1;
 
 pub(crate) struct HeadsUpPushFold {
     equity: &'static HeadsUpEquity,
-    /// SB's net chips when the all-in is called, per class pair `[sb * 169 + bb]`.
-    sb_showdown: Vec<f64>,
+    tree: PushFold,
+    nodes: Vec<Node>,
 }
 
 impl HeadsUpPushFold {
     pub(crate) fn new(spot: &Spot) -> HeadsUpPushFold {
-        let equity = HeadsUpEquity::get();
-        let contested = spot.effective_stack();
-        let sb_showdown = equity
-            .equity
-            .iter()
-            .map(|e| e * 2.0 * contested - contested)
-            .collect();
+        let tree = PushFold::new(spot);
         HeadsUpPushFold {
-            equity,
-            sb_showdown,
+            equity: HeadsUpEquity::get(),
+            nodes: tree.decisions(),
+            tree,
+        }
+    }
+
+    /// Probability that each class goes all-in at `node`: from the profile at
+    /// a decision, 1 where the player is forced in.
+    fn all_in(&self, profile: &Table, node: Node) -> Vec<f64> {
+        match self.nodes.iter().position(|&n| n == node) {
+            Some(n) => (0..NUM_CLASSES)
+                .map(|class| profile.infoset(n, class)[ALL_IN])
+                .collect(),
+            None => vec![1.0; NUM_CLASSES],
         }
     }
 }
 
 impl Game for HeadsUpPushFold {
     fn nodes(&self) -> &[Node] {
-        &NODES
+        &self.nodes
     }
 
     fn action_values(&self, profile: &Table) -> Table {
-        let mut values = Table::new(&NODES, 0.0);
-        for sb in 0..NUM_CLASSES {
-            let push = profile.infoset(SB_OPEN, sb)[ALL_IN];
-            let (mut fold_value, mut push_value) = (0.0, 0.0);
-            for bb in 0..NUM_CLASSES {
-                let pair = sb * NUM_CLASSES + bb;
+        let (sb, bb) = (Position::Sb.index(), Position::Bb.index());
+        let walk = self.tree.payoff(&[Position::Bb]);
+        let steal = self.tree.payoff(&[Position::Sb]);
+        let showdown = self.tree.payoff(&[Position::Sb, Position::Bb]);
+        // The SB's payoff when the all-in is called, per class pair; the BB's
+        // is its opposite.
+        let called = |e: f64| showdown.constant[sb] + showdown.terms[sb][SB_BB] * e;
+
+        let pushes = self.all_in(profile, Node::SbOpen);
+        let calls = self.all_in(profile, Node::BbVsSbPush);
+        let mut sb_values = vec![[0.0; 2]; NUM_CLASSES];
+        let mut bb_values = vec![[0.0; 2]; NUM_CLASSES];
+        for ((s, sb_value), push) in sb_values.iter_mut().enumerate().zip(pushes) {
+            for ((b, bb_value), &call) in bb_values.iter_mut().enumerate().zip(&calls) {
+                let pair = s * NUM_CLASSES + b;
                 let w = self.equity.weight[pair];
-                let call = profile.infoset(BB_VS_PUSH, bb)[ALL_IN];
-                let showdown = self.sb_showdown[pair];
-                fold_value -= w * SB_BLIND;
-                push_value += w * ((1.0 - call) * BB_BLIND + call * showdown);
-                // Heads-up chips are zero-sum: the BB's payoff mirrors the SB's.
-                let bb_values = values.infoset_mut(BB_VS_PUSH, bb);
-                bb_values[FOLD] -= w * push * BB_BLIND;
-                bb_values[ALL_IN] -= w * push * showdown;
+                let sb_called = called(self.equity.equity[pair]);
+                sb_value[FOLD] += w * walk.constant[sb];
+                sb_value[ALL_IN] += w * ((1.0 - call) * steal.constant[sb] + call * sb_called);
+                bb_value[FOLD] += w * push * steal.constant[bb];
+                bb_value[ALL_IN] -= w * push * sb_called;
             }
-            let sb_values = values.infoset_mut(SB_OPEN, sb);
-            sb_values[FOLD] = fold_value;
-            sb_values[ALL_IN] = push_value;
+        }
+
+        let mut values = Table::new(&self.nodes, 0.0);
+        for (n, &node) in self.nodes.iter().enumerate() {
+            let source = match node {
+                Node::SbOpen => &sb_values,
+                _ => &bb_values,
+            };
+            debug_assert_eq!(self.tree.slot(node), Slot::Decision);
+            for (class, v) in source.iter().enumerate() {
+                values.infoset_mut(n, class).copy_from_slice(v);
+            }
         }
         values
     }

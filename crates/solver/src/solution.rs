@@ -1,34 +1,60 @@
-use crate::cfr::{self, Table};
+use std::io;
+
+use crate::cfr::{self, Game, Table};
 use crate::hand::HandClass;
 use crate::heads_up::HeadsUpPushFold;
 use crate::spot::{Position, Spot};
+use crate::three_max::ThreeMaxPushFold;
 use crate::tree::{Action, Node};
 
-/// How long to run the solver.
+/// How long to run the solver: until the exploitability target is met, or
+/// for at most `iterations`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SolveOptions {
-    /// Number of CFR+ iterations.
+    /// Maximum number of iterations.
     pub iterations: u32,
+    /// Stop as soon as the exploitability falls below this, in BB per hand
+    /// (checked every few iterations); `None` runs every iteration.
+    pub target_exploitability: Option<f64>,
 }
 
 impl Default for SolveOptions {
+    /// A tenth of a milli-big-blind per hand: below the 3-max chance model's
+    /// own sampling error, so iterating further would not make the strategy
+    /// more accurate.
     fn default() -> Self {
-        SolveOptions { iterations: 1000 }
+        SolveOptions {
+            iterations: 1000,
+            target_exploitability: Some(1e-5),
+        }
     }
 }
 
 /// Computes an equilibrium strategy for `spot`.
 pub fn solve(spot: &Spot, options: &SolveOptions) -> Solution {
-    let game = HeadsUpPushFold::new(spot);
-    let profile = cfr::solve(&game, options.iterations);
-    let exploitability = Exploitability {
-        per_player: cfr::exploitability(&game, &profile),
-    };
+    if spot.is_heads_up() {
+        solve_game(spot, options, &HeadsUpPushFold::new(spot))
+    } else {
+        solve_game(spot, options, &ThreeMaxPushFold::new(spot))
+    }
+}
+
+fn solve_game(spot: &Spot, options: &SolveOptions, game: &impl Game) -> Solution {
+    let run = cfr::solve(game, options.iterations, options.target_exploitability);
+    // Players without a decision cannot deviate: they gain nothing.
+    let per_player = spot
+        .positions()
+        .into_iter()
+        .map(|position| {
+            let gain = run.exploitability.iter().find(|(p, _)| *p == position);
+            (position, gain.map_or(0.0, |(_, gain)| *gain))
+        })
+        .collect();
     Solution {
         spot: spot.clone(),
-        iterations: options.iterations,
-        profile,
-        exploitability,
+        iterations: run.iterations,
+        profile: run.profile,
+        exploitability: Exploitability { per_player },
     }
 }
 
@@ -46,11 +72,14 @@ impl Solution {
         &self.spot
     }
 
+    /// Number of iterations actually run (fewer than asked when the target
+    /// exploitability was reached first).
     pub fn iterations(&self) -> u32 {
         self.iterations
     }
 
     /// The decision nodes of the spot's tree, in the order they are played.
+    /// A player all-in from the blind, or with nothing to call, has no node.
     pub fn nodes(&self) -> &[Node] {
         self.profile.nodes()
     }
@@ -82,6 +111,22 @@ impl Solution {
 
     pub fn exploitability(&self) -> &Exploitability {
         &self.exploitability
+    }
+
+    /// Writes the strategy as CSV: a `node,position,hand,action,frequency`
+    /// header, then one row per node, hand class and legal action.
+    pub fn write_csv(&self, mut out: impl io::Write) -> io::Result<()> {
+        writeln!(out, "node,position,hand,action,frequency")?;
+        for &node in self.nodes() {
+            for hand in HandClass::all() {
+                let strategy = self.strategy(node, hand).expect("the node is in the tree");
+                for (action, frequency) in strategy.iter() {
+                    let (id, actor) = (node.id(), node.actor());
+                    writeln!(out, "{id},{actor},{hand},{action},{frequency:.6}")?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 

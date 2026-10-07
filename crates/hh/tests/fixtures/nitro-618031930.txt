@@ -1,0 +1,86 @@
+Winamax Poker - Tournament "Expresso Nitro" buyIn: 0.93€ + 0.07€ level: 1 - HandId: #2654426927233761281-4-1672660021 - Holdem no limit (10/20) - 2023/01/02 11:47:01 UTC
+Table: 'Expresso Nitro(618031930)#0' 3-max (real money) Seat #2 is the button
+Seat 1: villain 1 (270)
+Seat 2: hero (220)
+Seat 3: villain 2 (410)
+*** ANTE/BLINDS ***
+villain 2 posts small blind 10
+villain 1 posts big blind 20
+Dealt to hero [Js Jh]
+*** PRE-FLOP ***
+hero raises 20 to 40
+villain 2 calls 30
+villain 1 folds
+*** FLOP *** [6h 3h 5d]
+villain 2 bets 20
+hero calls 20
+*** TURN *** [6h 3h 5d][Ks]
+villain 2 bets 20
+hero calls 20
+*** RIVER *** [6h 3h 5d Ks][Ac]
+villain 2 checks
+hero checks
+*** SHOW DOWN ***
+villain 2 shows [6s Qd] (One pair : 6)
+hero shows [Js Jh] (One pair : Jacks)
+hero collected 180 from pot
+*** SUMMARY ***
+Total pot 180 | No rake
+Board: [6h 3h 5d Ks Ac]
+Seat 2: hero (button) showed [Js Jh] and won 180 with One pair : Jacks
+Seat 3: villain 2 (small blind) showed [6s Qd] and lost with One pair : 6
+
+
+Winamax Poker - Tournament "Expresso Nitro" buyIn: 0.93€ + 0.07€ level: 5 - HandId: #2654426927233761281-10-1672660215 - Holdem no limit (40/80) - 2023/01/02 11:50:15 UTC
+Table: 'Expresso Nitro(618031930)#0' 3-max (real money) Seat #1 is the button
+Seat 1: villain 1 (390)
+Seat 2: hero (510)
+*** ANTE/BLINDS ***
+villain 1 posts small blind 40
+hero posts big blind 80
+Dealt to hero [Ad 3s]
+*** PRE-FLOP ***
+villain 1 raises 80 to 160
+hero raises 350 to 510 and is all-in
+villain 1 calls 230 and is all-in
+*** FLOP *** [Qd 4s 7h]
+*** TURN *** [Qd 4s 7h][9h]
+*** RIVER *** [Qd 4s 7h 9h][6c]
+*** SHOW DOWN ***
+villain 1 shows [2s Ac] (High card : Ace)
+hero shows [Ad 3s] (High card : Ace)
+hero collected 510 from side pot 1
+villain 1 collected 390 from main pot
+*** SUMMARY ***
+Total pot 900 | No rake
+Board: [Qd 4s 7h 9h 6c]
+Seat 1: villain 1 (small blind) (button) showed [2s Ac] and won 390 with High card : Ace
+Seat 2: hero (big blind) showed [Ad 3s] and won 510 with High card : Ace
+
+
+Winamax Poker - Tournament "Expresso Nitro" buyIn: 0.93€ + 0.07€ level: 6 - HandId: #2654426927233761281-15-1672660282 - Holdem no limit (50/100) - 2023/01/02 11:51:22 UTC
+Table: 'Expresso Nitro(618031930)#0' 3-max (real money) Seat #2 is the button
+Seat 1: villain 1 (380)
+Seat 2: hero (520)
+*** ANTE/BLINDS ***
+hero posts small blind 50
+villain 1 posts big blind 100
+Dealt to hero [Js Tc]
+*** PRE-FLOP ***
+hero raises 420 to 520 and is all-in
+villain 1 calls 280 and is all-in
+*** FLOP *** [8c Kh Ts]
+*** TURN *** [8c Kh Ts][Qs]
+*** RIVER *** [8c Kh Ts Qs][6d]
+*** SHOW DOWN ***
+villain 1 shows [Kc Jh] (One pair : Kings)
+hero shows [Js Tc] (One pair : Tens)
+hero collected 140 from side pot 1
+villain 1 collected 760 from main pot
+*** SUMMARY ***
+Total pot 900 | No rake
+Board: [8c Kh Ts Qs 6d]
+Seat 1: villain 1 (big blind) showed [Kc Jh] and won 760 with One pair : Kings
+Seat 2: hero (small blind) (button) showed [Js Tc] and won 140 with One pair : Tens
+
+
