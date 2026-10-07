@@ -1,0 +1,21 @@
+[package]
+name = "nitro-local-client"
+description = "Local Expresso Nitro table client: a human plays the simulator's bots"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "nitro-local-client"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+nitro-simulator.workspace = true
+softbuffer.workspace = true
+tiny-skia.workspace = true
+winit.workspace = true
+
+[lints]
+workspace = true

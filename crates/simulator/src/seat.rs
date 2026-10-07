@@ -4,7 +4,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use rand::{Rng, RngExt};
-pub use rs_poker::core::Card;
+pub use rs_poker::core::{Card, Suit, Value};
 
 /// Who plays a seat: a bot, a solver strategy, a population model, or a
 /// human through a client.
