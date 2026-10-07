@@ -1,13 +1,9 @@
-//! Decision points and populations built by hand for the strategy tests.
+//! Decision points built by hand for the strategy tests.
 
-use std::sync::Arc;
-
-use nitro_population::{Players, PopulationModel};
 use nitro_simulator::{
-    Card, PlayerView, Position, PrizeTable, SeatStrategy, SeatView, SimulationConfig, Street,
-    Structure, Suit, Value, hand_histories,
+    Card, Decision, PlayerView, Position, SeatStrategy, SeatView, Street, Suit, Value,
 };
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 
 /// One player at the table: position, chips behind, chips put in on the
 /// street, folded, all-in.
@@ -48,7 +44,7 @@ pub fn view(me: usize, cards: &str, players: &[Seat]) -> SeatView {
     }
 }
 
-pub fn cards_of(text: &str) -> [Card; 2] {
+fn cards_of(text: &str) -> [Card; 2] {
     let cards: Vec<Card> = text
         .split(' ')
         .map(|c| Card::try_from(c).expect("a card such as Ah"))
@@ -70,48 +66,16 @@ pub fn on_flop(mut view: SeatView) -> SeatView {
     view
 }
 
-pub fn config(seats: [Arc<dyn SeatStrategy>; 3], games: u64, seed: u64) -> SimulationConfig {
-    SimulationConfig {
-        prize_table: PrizeTable::for_buy_in(100).unwrap().clone(),
-        structure: Structure::expresso_nitro(),
-        games,
-        seed,
-        seats,
-    }
-}
-
-/// The population model of every player of `games` simulated games
-/// between `seats`; with `first_hands_only`, of their first hands only
-/// (three-handed at 15 BB).
-pub fn population_of(
-    seats: [Arc<dyn SeatStrategy>; 3],
-    games: u64,
-    first_hands_only: bool,
-) -> PopulationModel {
-    let config = config(seats, games, 99);
-    let hands: Vec<_> = (0..games)
-        .flat_map(|game| {
-            let hands = hand_histories(&config, game, None);
-            let keep = if first_hands_only { 1 } else { hands.len() };
-            hands.into_iter().take(keep)
-        })
-        .collect();
-    PopulationModel::build(&hands, Players::Opponents)
-}
-
 /// The decisions a strategy takes at `view` over many draws, as shares of
 /// fold, call and all-in.
 pub fn shares(strategy: &dyn SeatStrategy, view: &SeatView) -> [f64; 3] {
-    use rand::SeedableRng;
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
     let mut counts = [0u32; 3];
     let draws = 2_000;
     for _ in 0..draws {
         let decision = strategy.decide(view, &mut rng as &mut dyn Rng);
-        counts[nitro_simulator::Decision::ALL
-            .iter()
-            .position(|&d| d == decision)
-            .unwrap()] += 1;
+        let i = Decision::ALL.iter().position(|&d| d == decision).unwrap();
+        counts[i] += 1;
     }
     counts.map(|c| f64::from(c) / f64::from(draws))
 }

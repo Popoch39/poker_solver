@@ -7,6 +7,7 @@ mod prize;
 mod push_fold;
 mod seat;
 mod simulation;
+mod solver_hero;
 mod structure;
 mod table;
 
@@ -18,5 +19,6 @@ pub use seat::{
     Suit, TrivialBot, Value,
 };
 pub use simulation::{Report, SeatReport, SimulationConfig, hand_histories, simulate};
+pub use solver_hero::SolverHero;
 pub use structure::{BlindLevel, NITRO_BLIND_LEVELS, Structure};
 pub use table::{TableSeat, TableView};
