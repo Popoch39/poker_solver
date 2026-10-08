@@ -111,3 +111,7 @@ _Éviter_ : client (seul, ambigu avec le client Winamax), table
 **Bot cliqueur** :
 Programme qui lit l'écran du client local et joue en injectant des clics, sans aucune API.
 _Éviter_ : bot (seul), auto-clicker
+
+**Arrêt d'urgence** :
+Signal (SIGINT, SIGTERM) ou fichier créé par un raccourci qui coupe aussitôt toute injection de clics du bot cliqueur, sans jamais se lever tout seul (voir ADR 0008).
+_Éviter_ : kill switch, pause
