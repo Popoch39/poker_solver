@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use nitro_hh::parse_path;
+use nitro_hh::parse_paths;
 use nitro_population::{
     Action, HandClass, Node, NodeStats, OffTreeAction, Players, PopulationModel, Position,
 };
@@ -33,14 +33,9 @@ pub fn run(args: &Args) -> ExitCode {
 /// The population model of the opponents in the histories at `paths`, and
 /// how many files or hands could not be read.
 pub fn build(paths: &[PathBuf]) -> (PopulationModel, usize) {
-    let mut errors = 0;
-    let mut hands = Vec::new();
-    for path in paths {
-        let batch = parse_path(path);
-        errors += batch.errors.len();
-        hands.extend(batch.tournaments.into_iter().flat_map(|t| t.hands));
-    }
-    (PopulationModel::build(&hands, Players::Opponents), errors)
+    let batch = parse_paths(paths);
+    let model = PopulationModel::build(batch.hands(), Players::Opponents);
+    (model, batch.errors.len())
 }
 
 fn print_model(model: &PopulationModel, errors: usize) {
@@ -51,7 +46,7 @@ fn print_model(model: &PopulationModel, errors: usize) {
         model.hands_in_tree(),
         model.hands_off_tree()
     );
-    println!("{errors} files or hands skipped: other formats or unreadable (see `nitro hh`)");
+    crate::hh::print_skipped(errors);
     println!("Decisions of every player but the account owner of the histories.");
     println!();
     for (node, bucket, stats) in model.entries() {

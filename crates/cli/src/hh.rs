@@ -6,19 +6,19 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use nitro_hh::ohh::write_hand;
-use nitro_hh::{Batch, ErrorKind, parse_path, to_ohh};
+use nitro_hh::{Batch, ErrorKind, parse_paths, to_ohh};
 
 /// Errors listed one per line before the rest are only counted.
 const MAX_LISTED_ERRORS: usize = 20;
 
+/// How the commands that read histories, but `nitro hh`, report what they
+/// could not read.
+pub fn print_skipped(errors: usize) {
+    println!("{errors} files or hands skipped: other formats or unreadable (see `nitro hh`)");
+}
+
 pub fn run(paths: &[PathBuf], ohh: Option<&Path>) -> ExitCode {
-    let mut batch = Batch::default();
-    for path in paths {
-        let parsed = parse_path(path);
-        batch.files += parsed.files;
-        batch.tournaments.extend(parsed.tournaments);
-        batch.errors.extend(parsed.errors);
-    }
+    let batch = parse_paths(paths);
     print_report(&batch);
     if let Some(ohh) = ohh {
         match write_ohh(&batch, ohh) {

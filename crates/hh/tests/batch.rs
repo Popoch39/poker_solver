@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use nitro_hh::ohh::write_hand;
-use nitro_hh::{ErrorKind, Hand, parse_hands, parse_path, to_ohh};
+use nitro_hh::{ErrorKind, Hand, parse_hands, parse_path, parse_paths, to_ohh};
 
 const HANDS: &str = include_str!("fixtures/nitro-618031930.txt");
 const SUMMARY: &str = include_str!("fixtures/nitro-618031930_summary.txt");
@@ -32,6 +32,27 @@ fn a_folder_parses_into_tournaments_with_their_summaries() {
     assert_eq!(tournament.id, "618031930");
     assert_eq!(tournament.hands.len(), 3);
     assert_eq!(tournament.summary.as_ref().unwrap().place, 2);
+}
+
+#[test]
+fn several_paths_parse_into_one_batch_a_tournament_across_them_staying_one() {
+    let dir = scratch_dir("several_paths");
+    fs::create_dir(dir.join("hands")).unwrap();
+    fs::write(dir.join("hands/hands.txt"), HANDS).unwrap();
+    let summary = dir.join("hands_summary.txt");
+    fs::write(&summary, SUMMARY).unwrap();
+    let damaged = dir.join("damaged.txt");
+    fs::write(&damaged, HANDS.replace("raises 80 to 160", "raises 80 to")).unwrap();
+
+    let batch = parse_paths([dir.join("hands"), summary, damaged]);
+
+    assert_eq!(batch.files, 3);
+    assert_eq!(batch.tournaments.len(), 1);
+    let tournament = &batch.tournaments[0];
+    assert_eq!(tournament.hands.len(), 5);
+    assert_eq!(tournament.summary.as_ref().unwrap().place, 2);
+    assert_eq!(batch.errors.len(), 1, "{:?}", batch.errors);
+    assert!(batch.errors[0].path.ends_with("damaged.txt"));
 }
 
 #[test]

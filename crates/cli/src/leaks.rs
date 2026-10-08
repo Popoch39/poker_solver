@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use nitro_hh::parse_path;
+use nitro_hh::parse_paths;
 use nitro_population::{LeakOptions, LeakReport};
 
 #[derive(clap::Args)]
@@ -26,27 +26,23 @@ pub struct Args {
 }
 
 pub fn run(args: &Args) -> ExitCode {
-    let hands: Vec<_> = args
-        .paths
-        .iter()
-        .flat_map(|path| parse_path(path).tournaments)
-        .flat_map(|tournament| tournament.hands)
-        .collect();
+    let batch = parse_paths(&args.paths);
     let options = LeakOptions {
         min_sample: args.min_sample,
         samples: args.samples,
         ..LeakOptions::default()
     };
-    let report = LeakReport::build(&hands, &args.hero, &options);
+    let report = LeakReport::build(batch.hands(), &args.hero, &options);
     if report.hands() == 0 {
         eprintln!("error: no hand was dealt to the account given with --hero");
         return ExitCode::FAILURE;
     }
-    print_report(&report, options.min_sample);
+    print_report(&report, options.min_sample, batch.errors.len());
     ExitCode::SUCCESS
 }
 
-fn print_report(report: &LeakReport, min_sample: u32) {
+fn print_report(report: &LeakReport, min_sample: u32, errors: usize) {
+    crate::hh::print_skipped(errors);
     println!(
         "{} hands read; your push (or call) frequency per node and stack bucket,",
         report.hands()

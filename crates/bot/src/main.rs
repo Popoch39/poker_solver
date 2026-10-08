@@ -14,7 +14,7 @@ use nitro_bot::{
     ClickerBot, EmergencyStop, Grim, Hyprctl, MeasureConfig, Pace, TableReader, Uinput,
     capture_client, find_client_window, measure, play_live, play_offscreen,
 };
-use nitro_hh::parse_path;
+use nitro_hh::parse_paths;
 use nitro_local_client::Frame;
 use nitro_population::{Players, PopulationModel};
 use nitro_simulator::{
@@ -160,19 +160,14 @@ impl HeroArgs {
 
 /// The opponents' population model of the histories at `paths`.
 fn population(paths: &[PathBuf]) -> PopulationModel {
-    let mut hands = Vec::new();
-    for path in paths {
-        let batch = parse_path(path);
-        if !batch.errors.is_empty() {
-            eprintln!(
-                "{}: {} files or hands skipped",
-                path.display(),
-                batch.errors.len()
-            );
-        }
-        hands.extend(batch.tournaments.into_iter().flat_map(|t| t.hands));
+    let batch = parse_paths(paths);
+    if !batch.errors.is_empty() {
+        eprintln!(
+            "{} files or hands skipped: other formats or unreadable (see `nitro hh`)",
+            batch.errors.len()
+        );
     }
-    PopulationModel::build(&hands, Players::Opponents)
+    PopulationModel::build(batch.hands(), Players::Opponents)
 }
 
 fn main() -> ExitCode {

@@ -45,13 +45,24 @@ pub struct FileError {
 /// files and bad hands are listed in [`Batch::errors`] and do not stop the
 /// rest.
 pub fn parse_path(path: &Path) -> Batch {
+    parse_paths([path])
+}
+
+/// Parses every path like [`parse_path`], into one batch: a tournament whose
+/// files lie under several paths is still one tournament.
+pub fn parse_paths<P: AsRef<Path>>(paths: impl IntoIterator<Item = P>) -> Batch {
     let mut files = Vec::new();
     let mut batch = Batch::default();
-    if path.is_dir() {
-        collect_files(path, &mut files, &mut batch.errors);
-        files.sort();
-    } else {
-        files.push(path.to_path_buf());
+    for path in paths {
+        let path = path.as_ref();
+        if path.is_dir() {
+            let mut found = Vec::new();
+            collect_files(path, &mut found, &mut batch.errors);
+            found.sort();
+            files.extend(found);
+        } else {
+            files.push(path.to_path_buf());
+        }
     }
 
     let mut index_of: HashMap<String, usize> = HashMap::new();
