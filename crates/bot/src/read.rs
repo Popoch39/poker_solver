@@ -246,6 +246,7 @@ impl TableReader {
                     None => false,
                 },
                 Decision::AllIn => text.strip_prefix("ALL-IN ").and_then(amount).is_some(),
+                Decision::MinRaise => text.strip_prefix("RAISE ").and_then(amount).is_some(),
             };
             if !fine {
                 return Err(unexpected(&region, &text));

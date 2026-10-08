@@ -108,6 +108,7 @@ fn the_regions_fit_in_the_window_without_overlapping() {
         ("fold".into(), LAYOUT.fold),
         ("call".into(), LAYOUT.call),
         ("all-in".into(), LAYOUT.all_in),
+        ("min-raise".into(), LAYOUT.min_raise),
     ];
     for (i, rect) in LAYOUT.board.iter().enumerate() {
         regions.push((format!("board {i}"), *rect));

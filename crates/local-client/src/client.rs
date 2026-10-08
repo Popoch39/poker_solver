@@ -161,6 +161,7 @@ impl LocalClient {
             Decision::Call => format!("CALL{s} {}", chips(to_call)),
             Decision::AllIn if seat == HERO => "GO ALL-IN".to_owned(),
             Decision::AllIn => "GOES ALL-IN".to_owned(),
+            Decision::MinRaise => format!("RAISE{s} TO {}", chips(2.0 * self.view().big_blind)),
         };
         format!("{} {action}", self.names[seat])
     }

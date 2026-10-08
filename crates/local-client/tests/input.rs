@@ -70,6 +70,17 @@ fn a_click_on_a_legal_button_plays_it() {
 }
 
 #[test]
+fn a_click_on_the_min_raise_button_raises_to_two_big_blinds() {
+    let mut client = client(3, [TrivialBot::AlwaysFold; 2]);
+    assert!(until_hero_acts(&mut client));
+    assert!(client.view().legal.contains(&Decision::MinRaise));
+    let (x, y) = LAYOUT.min_raise.center();
+    assert!(matches!(client.click(x, y), Some(Next::After(_))));
+    assert_eq!(client.view().seats[HERO].street_bet, 40.0);
+    assert_eq!(client.status(), "YOU RAISE TO 40");
+}
+
+#[test]
 fn a_fold_leaves_the_hand_and_shows_the_winner() {
     let mut client = client(3, [TrivialBot::AlwaysAllIn; 2]);
     assert!(until_hero_acts(&mut client));
