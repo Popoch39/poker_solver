@@ -40,6 +40,29 @@ fn leaks_compares_each_node_to_the_equilibrium_without_naming_anyone() {
 }
 
 #[test]
+fn leaks_reports_the_hands_it_could_not_read() {
+    let damaged = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("leaks-damaged.txt");
+    let hands = std::fs::read_to_string(PathBuf::from(fixtures()).join("nitro-618031930.txt"))
+        .unwrap()
+        .replace("618031930", "618031931")
+        .replace("raises 80 to 160", "raises 80 to");
+    std::fs::write(&damaged, hands).unwrap();
+
+    let output = nitro(&[
+        "leaks",
+        &fixtures(),
+        damaged.to_str().unwrap(),
+        "--hero",
+        "hero",
+    ]);
+
+    assert!(output.status.success());
+    let out = String::from_utf8(output.stdout).unwrap();
+    assert!(out.contains("5 hands read"), "{out}");
+    assert!(out.contains("1 files or hands skipped"), "{out}");
+}
+
+#[test]
 fn leaks_of_an_account_without_hands_is_an_error() {
     let output = nitro(&["leaks", &fixtures(), "--hero", "nobody"]);
     assert!(!output.status.success());

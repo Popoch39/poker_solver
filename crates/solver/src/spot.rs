@@ -155,6 +155,8 @@ pub enum SpotError {
     InvalidLock { node: Node, hand: HandClass },
     #[error("a realization factor must be a non-negative number, got {0}")]
     InvalidRealization(f64),
+    #[error("{node} is locked on {action}, which the spot would no longer allow there")]
+    LockedActionDisallowed { node: Node, action: Action },
 }
 
 impl Spot {
@@ -207,16 +209,40 @@ impl Spot {
 
     /// Allows (or not) limping: putting in one big blind while nobody has
     /// raised, then checking from the BB.
-    pub fn with_limp(mut self, allowed: bool) -> Spot {
+    ///
+    /// Refused when a locked node limps: the lock would no longer fit the
+    /// spot's tree.
+    pub fn with_limp(mut self, allowed: bool) -> Result<Spot, SpotError> {
         self.limp = allowed;
-        self
+        self.check_locks()
     }
 
     /// Allows (or not) one min-raise per hand, to two big blinds, while
     /// nobody has raised; it can be called, folded to or pushed over.
-    pub fn with_min_raise(mut self, allowed: bool) -> Spot {
+    ///
+    /// Refused when a locked node min-raises: the lock would no longer fit
+    /// the spot's tree.
+    pub fn with_min_raise(mut self, allowed: bool) -> Result<Spot, SpotError> {
         self.min_raise = allowed;
-        self
+        self.check_locks()
+    }
+
+    /// `self` if every lock only plays actions its node has in this spot.
+    fn check_locks(self) -> Result<Spot, SpotError> {
+        for lock in &self.locks {
+            let actions = self.actions_at(lock.node);
+            for row in lock.frequencies.chunks(lock.actions.len()) {
+                let mut played = lock.actions.iter().zip(row);
+                if let Some((&action, _)) = played.find(|&(a, &f)| f != 0.0 && !actions.contains(a))
+                {
+                    return Err(SpotError::LockedActionDisallowed {
+                        node: lock.node,
+                        action,
+                    });
+                }
+            }
+        }
+        Ok(self)
     }
 
     /// Sets the realization factors of the equity model that values the
@@ -344,9 +370,9 @@ impl Spot {
     /// The locked frequencies of `node`, laid out class by class for the
     /// node's `actions` in the solved tree, or `None` if the node is free.
     ///
-    /// # Panics
-    /// If the lock plays an action the solved tree does not have at the
-    /// node: limps or min-raises were disallowed after locking it.
+    /// A lock only plays actions of its node in the spot ([`Spot::lock`],
+    /// [`Spot::with_limp`] and [`Spot::with_min_raise`] see to it): the
+    /// actions the tree has beyond them get 0.
     pub(crate) fn locked(&self, node: Node, actions: &[Action]) -> Option<Vec<f64>> {
         let lock = self.locks.iter().find(|lock| lock.node == node)?;
         if lock.actions == actions {
@@ -355,12 +381,6 @@ impl Spot {
         let width = lock.actions.len();
         let mut frequencies = Vec::with_capacity(NUM_CLASSES * actions.len());
         for row in lock.frequencies.chunks(width) {
-            for (&action, &f) in lock.actions.iter().zip(row) {
-                assert!(
-                    f == 0.0 || actions.contains(&action),
-                    "{node} is locked on {action}, which this spot does not allow there"
-                );
-            }
             frequencies.extend(actions.iter().map(|a| {
                 lock.actions
                     .iter()

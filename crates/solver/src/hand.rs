@@ -1,6 +1,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use rs_poker::core::Card;
+
 use crate::equity::HeadsUpEquity;
 
 /// Rank characters from the highest (ace) to the lowest (deuce), in the order
@@ -59,6 +61,12 @@ impl HandClass {
 
     pub(crate) fn index(self) -> usize {
         self.0 as usize
+    }
+
+    /// Class of two hole cards, in either order.
+    pub fn from_cards(a: Card, b: Card) -> HandClass {
+        let card = |c: Card| (u8::from(c.value), c.suit as u8);
+        HandClass::of_cards(card(a), card(b))
     }
 
     /// Class of two concrete cards, given as `(rank, suit)` with rank 0 = deuce

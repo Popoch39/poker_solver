@@ -3,9 +3,9 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use nitro_hh::parse_path;
+use nitro_hh::parse_paths;
 use nitro_population::{
-    Action, HandClass, Node, NodeStats, OffTreeAction, Players, PopulationModel, Position,
+    Action, Node, NodeStats, OffTreeAction, Players, PopulationModel, Position,
 };
 
 #[derive(clap::Args)]
@@ -33,19 +33,9 @@ pub fn run(args: &Args) -> ExitCode {
 /// The population model of the opponents in the histories at `paths`, and
 /// how many files or hands could not be read.
 pub fn build(paths: &[PathBuf]) -> (PopulationModel, usize) {
-    let mut errors = 0;
-    let mut hands = Vec::new();
-    for path in paths {
-        let batch = parse_path(path);
-        errors += batch.errors.len();
-        hands.extend(batch.tournaments.into_iter().flat_map(|t| t.hands));
-    }
-    (PopulationModel::build(&hands, Players::Opponents), errors)
-}
-
-/// The action a range is shown for: push or call, the last one of a node.
-fn aggressive(node: Node) -> Action {
-    *node.actions().last().expect("a node has actions")
+    let batch = parse_paths(paths);
+    let model = PopulationModel::build(batch.hands(), Players::Opponents);
+    (model, batch.errors.len())
 }
 
 fn print_model(model: &PopulationModel, errors: usize) {
@@ -56,15 +46,17 @@ fn print_model(model: &PopulationModel, errors: usize) {
         model.hands_in_tree(),
         model.hands_off_tree()
     );
-    println!("{errors} files or hands skipped: other formats or unreadable (see `nitro hh`)");
+    crate::hh::print_skipped(errors);
     println!("Decisions of every player but the account owner of the histories.");
+    println!(
+        "First in (BTN or SB open), every action: a min-raise is to 2 BB, a raise more, short of all-in."
+    );
     println!();
     for (node, bucket, stats) in model.entries() {
-        let action = aggressive(node);
+        let action = node.aggressive_action();
         println!(
-            "{node}, {bucket}: {action} {:.1}% on {} ({} shown)",
-            100.0 * stats.frequency(action),
-            stats.sample(),
+            "{node}, {bucket}: {}; {} {action} shown",
+            distribution(stats),
             stats.known_hands(action).total()
         );
     }
@@ -85,6 +77,29 @@ fn print_model(model: &PopulationModel, errors: usize) {
     );
 }
 
+/// Every action counted at a node with its share of the decisions, then the
+/// sample: `fold 50.0%, limp 20.0%, min-raise 5.0%, raise 3.0%, push 22.0%
+/// on 1000`.
+pub fn distribution(stats: &NodeStats) -> String {
+    let mut shares: Vec<String> = stats
+        .actions()
+        .iter()
+        .map(|&action| {
+            let label = match action {
+                Action::Raise => "min-raise".to_owned(),
+                _ => action.to_string(),
+            };
+            format!("{label} {:.1}%", 100.0 * stats.frequency(action))
+        })
+        .collect();
+    if stats.actions().contains(&Action::Raise) {
+        let raises = f64::from(stats.other_raises()) / f64::from(stats.sample());
+        // Raises above the min-raise sit between it and the push.
+        shares.insert(shares.len() - 1, format!("raise {:.1}%", 100.0 * raises));
+    }
+    format!("{} on {}", shares.join(", "), stats.sample())
+}
+
 const OFF_TREE_ACTIONS: [OffTreeAction; 4] = [
     OffTreeAction::Limp,
     OffTreeAction::MinRaise,
@@ -93,7 +108,7 @@ const OFF_TREE_ACTIONS: [OffTreeAction; 4] = [
 ];
 
 fn print_ranges(model: &PopulationModel, node: Node) {
-    let action = aggressive(node);
+    let action = node.aggressive_action();
     for (_, bucket, stats) in model.entries().filter(|&(n, _, _)| n == node) {
         let shown = stats.known_hands(action).total();
         if shown == 0 {
@@ -102,30 +117,9 @@ fn print_ranges(model: &PopulationModel, node: Node) {
         println!();
         println!("{node}, {bucket}: {action} range estimated from {shown} shown hands");
         println!("(% {action} per hand; pairs on the diagonal, suited above, offsuit below)");
-        print_grid(stats, action);
-    }
-}
-
-fn print_grid(stats: &NodeStats, action: Action) {
-    const RANKS: [char; 13] = [
-        'A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2',
-    ];
-    let header: String = RANKS.iter().map(|r| format!("{r:>4}")).collect();
-    println!("   {header}");
-    for (row, rank) in RANKS.iter().enumerate() {
-        let cells: String = (0..13)
-            .map(|col| {
-                let freq = stats
-                    .estimated_frequency(action, HandClass::at_grid(row, col))
-                    .unwrap_or(0.0);
-                let percent = (100.0 * freq).round();
-                if percent == 0.0 {
-                    format!("{:>4}", ".")
-                } else {
-                    format!("{percent:>4}")
-                }
-            })
-            .collect();
-        println!("  {rank}{cells}");
+        let grid = crate::grid(|hand| stats.estimated_frequency(action, hand).unwrap_or(0.0));
+        for line in grid {
+            println!("{line}");
+        }
     }
 }

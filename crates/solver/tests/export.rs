@@ -41,7 +41,8 @@ fn csv_has_the_limp_and_min_raise_nodes_and_actions() {
     let spot = Spot::heads_up(12.0, 12.0)
         .unwrap()
         .with_limp(true)
-        .with_min_raise(true);
+        .and_then(|spot| spot.with_min_raise(true))
+        .unwrap();
     let solution = solve(&spot, &SolveOptions::default());
     let mut csv = Vec::new();
     solution.write_csv(&mut csv).unwrap();

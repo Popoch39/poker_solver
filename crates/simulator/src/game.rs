@@ -472,6 +472,8 @@ impl NitroGame {
             Decision::Fold => AgentAction::Fold,
             Decision::Call => AgentAction::Call,
             Decision::AllIn => AgentAction::AllIn,
+            // The arena's bet is the player's total on the street.
+            Decision::MinRaise => AgentAction::Bet(2.0 * hand.state.big_blind),
         });
         self.resume();
     }

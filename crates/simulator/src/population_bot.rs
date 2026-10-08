@@ -10,19 +10,21 @@ use crate::apart;
 use crate::push_fold::{self, Reading};
 use crate::seat::{Decision, SeatStrategy, SeatView};
 
-/// A bot-population: at each node of the push/fold tree, it pushes or calls
+/// A bot-population: at each node of the push/fold tree, it enters the pot
 /// as often as the population did at the same stacks and table size, with
 /// the hands the population is locked on in the solver
 /// ([`NodeStats::strategy`]: the strongest first), so that the exploit is
 /// computed against what the bot really plays.
 ///
+/// - First in, it limps, min-raises or pushes in the proportions the
+///   population entered with, whatever its hand; facing a push, it calls.
 /// - Stacks the population never reached at a node are played from the
 ///   nearest stack bucket observed there, at the same table size.
 /// - A node never reached at that table size is folded (a check when free).
-/// - Limps and min-raises, which the push/fold tree has no place for, are
-///   never played: the bot pushes or folds where the population limped.
-///   Facing them, and postflop, it follows the fallback policy of the
-///   push/fold strategies (ADR 0007).
+/// - Once it has limped or raised, facing a limp or a raise short of
+///   all-in, and postflop, it follows the fallback policy of the push/fold
+///   strategies (ADR 0007): it calls whatever comes after its own limp or
+///   raise, and answers another player's as a push.
 pub struct PopulationBot {
     model: Arc<PopulationModel>,
 }
@@ -66,13 +68,32 @@ impl SeatStrategy for PopulationBot {
         let Some(stats) = self.stats(decision.node, &decision.spot) else {
             return Decision::Fold;
         };
-        let aggressive = *decision.node.actions().last().expect("a node has actions");
-        let frequency = stats.strategy(decision.hand).frequency(aggressive);
-        let action = if rng.random::<f64>() < frequency {
-            aggressive
+        let aggressive = decision.node.aggressive_action();
+        let enters = stats.strategy(decision.hand).frequency(aggressive);
+        let action = if rng.random::<f64>() < enters {
+            entry(stats, rng).unwrap_or(aggressive)
         } else {
             Action::Fold
         };
         decision.decision(action)
     }
+}
+
+/// How a bot that enters the pot first in does it: a limp, a min-raise or a
+/// push, in the proportions the population entered with, whatever its hand.
+/// A raise above the min-raise is played as one, the simulator's only raise
+/// short of all-in. `None` where the population never limped nor raised
+/// (facing a push, the call is the only way in).
+fn entry(stats: &NodeStats, rng: &mut dyn Rng) -> Option<Action> {
+    let limps = stats.count(Action::Limp);
+    let raises = stats.count(Action::Raise) + stats.other_raises();
+    if limps + raises == 0 {
+        return None;
+    }
+    let draw = rng.random_range(0..limps + raises + stats.count(Action::Push));
+    Some(match draw {
+        _ if draw < limps => Action::Limp,
+        _ if draw < limps + raises => Action::Raise,
+        _ => Action::Push,
+    })
 }

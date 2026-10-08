@@ -47,7 +47,7 @@ impl Evaluator {
     pub(crate) fn new(solution: &Solution) -> Evaluator {
         let spot = solution.spot();
         let aggressive = TREE_ORDER.map(|node| {
-            let action = aggressive_action(node);
+            let action = node.aggressive_action();
             HandClass::all()
                 .map(|class| Some(solution.strategy(node, class)?.frequency(action)))
                 .collect::<Option<Vec<f64>>>()
@@ -284,10 +284,6 @@ fn facing_push(seat: usize, live: u8) -> Node {
         (_, true, false) => Node::BbVsBtnPush,
         _ => Node::BbVsSbPush,
     }
-}
-
-fn aggressive_action(node: Node) -> Action {
-    *node.actions().last().expect("a node has actions")
 }
 
 fn index(position: Position) -> usize {

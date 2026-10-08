@@ -3,7 +3,7 @@
 //! DCFR (Brown and Sandholm, 2019) with the parameters the authors recommend
 //! (α = 3/2, β = 0, γ = 2), simultaneous updates. On a 3-max push/fold spot
 //! it needs about ten times fewer iterations than CFR+ to reach a given
-//! exploitability (see `docs/adr/0003-banque-de-donnes-stratifiee-et-dcfr.md`).
+//! exploitability (see `docs/adr/0003-banque-de-donnees-stratifiee-et-dcfr.md`).
 //! The engine only sees a [`Game`] that turns a strategy profile into
 //! counterfactual action values; the game owns the tree, the chance model and
 //! the payoffs.

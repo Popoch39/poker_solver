@@ -31,10 +31,13 @@ pub enum Decision {
     Call,
     /// Put the whole stack in.
     AllIn,
+    /// Raise to two big blinds while nobody has raised (the min-raise of the
+    /// glossary): preflop only, and short of all-in.
+    MinRaise,
 }
 
 impl Decision {
-    pub const ALL: [Decision; 3] = [Self::Fold, Self::Call, Self::AllIn];
+    pub const ALL: [Decision; 4] = [Self::Fold, Self::Call, Self::AllIn, Self::MinRaise];
 }
 
 /// Table position. Heads-up, the button posts the small blind and is
@@ -79,21 +82,33 @@ pub struct SeatView {
 
 impl SeatView {
     /// The decisions that do something different from each other, in
-    /// [`Decision::ALL`] order: fold only when facing a bet, and all-in only
-    /// when it puts in more than a call against someone who can still call.
+    /// [`Decision::ALL`] order: fold only when facing a bet, all-in only
+    /// when it puts in more than a call against someone who can still call,
+    /// and the min-raise only preflop while the bet is still one big blind,
+    /// with chips left behind it.
     pub fn legal_decisions(&self) -> Vec<Decision> {
         let me = self.players.iter().find(|p| p.seat == self.seat);
-        let stack = me.map_or(0.0, |p| p.stack);
+        let (stack, bet) = me.map_or((0.0, 0.0), |p| (p.stack, p.street_bet));
         let someone_can_call = self
             .players
             .iter()
             .any(|p| p.seat != self.seat && !p.folded && !p.all_in);
+        let unraised = self.street == Street::Preflop
+            && self
+                .players
+                .iter()
+                .map(|p| p.street_bet)
+                .fold(0.0, f32::max)
+                == self.big_blind;
         Decision::ALL
             .into_iter()
             .filter(|d| match d {
                 Decision::Fold => self.to_call > 0.0,
                 Decision::Call => true,
                 Decision::AllIn => stack > self.to_call && someone_can_call,
+                Decision::MinRaise => {
+                    unraised && stack + bet > 2.0 * self.big_blind && someone_can_call
+                }
             })
             .collect()
     }

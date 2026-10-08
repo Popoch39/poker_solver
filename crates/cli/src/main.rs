@@ -162,8 +162,8 @@ fn spot(args: &SolveArgs) -> Result<Spot, String> {
         three_way_btn,
     };
     spot.with_limp(args.limp)
-        .with_min_raise(args.min_raise)
-        .with_realization(factors)
+        .and_then(|spot| spot.with_min_raise(args.min_raise))
+        .and_then(|spot| spot.with_realization(factors))
         .map_err(|err| err.to_string())
 }
 
@@ -313,14 +313,24 @@ fn print_report(solution: &Solution, only: Option<Node>) {
 }
 
 fn print_grid(solution: &Solution, node: Node, action: Action) {
-    for line in grid(solution, node, action) {
+    for line in strategy_grid(solution, node, action) {
         println!("{line}");
     }
 }
 
-/// The 13×13 grid of `action`'s frequency at `node`, in percent, one string
-/// per line: a header of ranks, then one row per rank.
-fn grid(solution: &Solution, node: Node, action: Action) -> Vec<String> {
+/// The grid of `action`'s frequency at `node` (see [`grid`]).
+fn strategy_grid(solution: &Solution, node: Node, action: Action) -> Vec<String> {
+    grid(|hand| {
+        solution
+            .strategy(node, hand)
+            .expect("the node belongs to the solved tree")
+            .frequency(action)
+    })
+}
+
+/// The 13×13 grid of a frequency per hand class, in percent, one string per
+/// line: a header of ranks, then one row per rank.
+fn grid(frequency: impl Fn(HandClass) -> f64) -> Vec<String> {
     const RANKS: [char; 13] = [
         'A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2',
     ];
@@ -329,11 +339,7 @@ fn grid(solution: &Solution, node: Node, action: Action) -> Vec<String> {
     for (row, rank) in RANKS.iter().enumerate() {
         let cells: String = (0..13)
             .map(|col| {
-                let hand = HandClass::at_grid(row, col);
-                let freq = solution
-                    .strategy(node, hand)
-                    .expect("the node belongs to the solved tree")
-                    .frequency(action);
+                let freq = frequency(HandClass::at_grid(row, col));
                 let percent = (100.0 * freq).round();
                 if percent == 0.0 {
                     format!("{:>4}", ".")

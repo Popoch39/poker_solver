@@ -70,7 +70,7 @@ fn ten_big_blind_ranges_match_the_cfr_spike_and_poker_sense() {
         &SolveOptions::default(),
     );
     let share = |node: Node| {
-        let action = *node.actions().last().unwrap();
+        let action = node.aggressive_action();
         solution.action_share(node, action).unwrap()
     };
     // Shares of combos measured by the independent CFR+ prototype of ticket
@@ -96,7 +96,7 @@ fn ten_big_blind_ranges_match_the_cfr_spike_and_poker_sense() {
         solution.strategy(node, hand).unwrap().frequency(action)
     };
     for &node in solution.nodes() {
-        let aggressive = *node.actions().last().unwrap();
+        let aggressive = node.aggressive_action();
         assert!(freq(node, "AA", aggressive) > 0.99, "{node}");
     }
     assert!(freq(Node::BtnOpen, "72o", Action::Fold) > 0.99);

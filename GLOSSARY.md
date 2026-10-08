@@ -78,6 +78,14 @@ _Éviter_ : postflop (désigne le jeu réel après le flop), modèle postflop
 Fichier texte écrit par le client Winamax qui décrit chaque coup joué (sièges, tapis, cartes connues, actions, gains), accompagné d'un fichier résumé par tournoi.
 _Éviter_ : hand history (en prose), log
 
+**Héros** :
+Le joueur dont on étudie ou fait jouer la stratégie : le titulaire du compte dans ses historiques de mains, la position exploitée dans un spot verrouillé, le siège qui suit le solver dans le simulateur.
+_Éviter_ : joueur (seul, ambigu avec les adversaires), moi, utilisateur
+
+**Fuite** :
+Écart entre ce que fait le héros à un nœud, pour une tranche de tapis, et la stratégie d'équilibre, chiffré par les jetons qu'il est estimé lui coûter.
+_Éviter_ : leak (en prose), erreur, faute
+
 **Modèle de population** :
 Fréquences d'action agrégées par nœud et par tranche de tapis, avec leur taille d'échantillon, tirées des historiques de mains sans tenir compte des pseudos.
 _Éviter_ : profil, HUD, stats joueurs

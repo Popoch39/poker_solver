@@ -37,7 +37,8 @@ fn heads_up_min_raise_can_be_called_or_pushed_over_and_every_node_id_reads_back(
     let spot = Spot::heads_up(12.0, 12.0)
         .unwrap()
         .with_limp(true)
-        .with_min_raise(true);
+        .and_then(|spot| spot.with_min_raise(true))
+        .unwrap();
     // A deeper tree than push/fold takes more iterations.
     let options = SolveOptions {
         iterations: 3000,
@@ -101,7 +102,10 @@ fn short_and_uneven_stacks_give_well_formed_trees() {
                 let Ok(spot) = Spot::three_max(btn, sb, bb) else {
                     continue;
                 };
-                let spot = spot.with_limp(true).with_min_raise(true);
+                let spot = spot
+                    .with_limp(true)
+                    .and_then(|spot| spot.with_min_raise(true))
+                    .unwrap();
                 let solution = solve(&spot, &options);
                 for &n in solution.nodes() {
                     assert_eq!(n.id().parse::<Node>(), Ok(n));
@@ -131,9 +135,10 @@ fn with_limp_and_min_raise_disallowed_the_solution_is_push_fold() {
     let disallowed = push_fold
         .clone()
         .with_limp(true)
-        .with_min_raise(true)
-        .with_limp(false)
-        .with_min_raise(false);
+        .and_then(|spot| spot.with_min_raise(true))
+        .and_then(|spot| spot.with_limp(false))
+        .and_then(|spot| spot.with_min_raise(false))
+        .unwrap();
     assert!(!disallowed.allows_limp() && !disallowed.allows_min_raise());
     let reference = solve(&push_fold, &SolveOptions::default());
     let solution = solve(&disallowed, &SolveOptions::default());
@@ -155,8 +160,8 @@ fn with_one_big_blind_stacks_and_a_realization_of_one_hands_are_valued_at_raw_eq
         let spot = push_fold
             .clone()
             .with_limp(true)
-            .with_min_raise(true)
-            .with_realization(factors)
+            .and_then(|spot| spot.with_min_raise(true))
+            .and_then(|spot| spot.with_realization(factors))
             .unwrap();
         let solution = solve(&spot, &SolveOptions::default());
         assert_eq!(largest_gap(&solution, &reference), 0.0);
@@ -171,7 +176,10 @@ fn with_one_big_blind_stacks_and_a_realization_of_one_hands_are_valued_at_raw_eq
 
 #[test]
 fn a_better_realization_out_of_position_makes_the_sb_limp_more() {
-    let spot = Spot::three_max(15.0, 15.0, 15.0).unwrap().with_limp(true);
+    let spot = Spot::three_max(15.0, 15.0, 15.0)
+        .unwrap()
+        .with_limp(true)
+        .unwrap();
     let limps = |out_of_position: f64| {
         let factors = RealizationFactors {
             out_of_position,
@@ -192,7 +200,7 @@ fn a_better_realization_out_of_position_makes_the_sb_limp_more() {
 
 #[test]
 fn realization_factors_must_be_non_negative_numbers() {
-    let spot = Spot::heads_up(10.0, 10.0).unwrap().with_limp(true);
+    let spot = Spot::heads_up(10.0, 10.0).unwrap().with_limp(true).unwrap();
     for bad in [-0.1, f64::NAN, f64::INFINITY] {
         let factors = RealizationFactors {
             in_position: bad,
@@ -212,7 +220,7 @@ fn realization_factors_must_be_non_negative_numbers() {
 fn with_stacks_of_two_big_blinds_the_min_raise_is_the_push_and_the_solution_is_push_fold() {
     for (btn, sb, bb) in [(2.0, 2.0, 2.0), (1.6, 2.0, 1.3)] {
         let push_fold = Spot::three_max(btn, sb, bb).unwrap();
-        let min_raise = push_fold.clone().with_min_raise(true);
+        let min_raise = push_fold.clone().with_min_raise(true).unwrap();
         let reference = solve(&push_fold, &SolveOptions::default());
         let solution = solve(&min_raise, &SolveOptions::default());
         // Both engines solve the same game; only float rounding differs.
@@ -230,7 +238,7 @@ fn with_stacks_of_two_big_blinds_the_min_raise_is_the_push_and_the_solution_is_p
 
 #[test]
 fn heads_up_limp_tree_lets_the_sb_limp_and_the_bb_check_or_push() {
-    let spot = Spot::heads_up(10.0, 10.0).unwrap().with_limp(true);
+    let spot = Spot::heads_up(10.0, 10.0).unwrap().with_limp(true).unwrap();
     let solution = solve(&spot, &SolveOptions::default());
     assert_eq!(
         solution.nodes(),

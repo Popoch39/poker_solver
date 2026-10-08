@@ -40,13 +40,13 @@ fn the_equilibrium_against_two_equilibrium_bots_wins_a_third_of_the_games() {
 
 #[test]
 fn against_a_population_that_calls_too_often_the_exploit_wins_more_than_the_equilibrium() {
-    // From the fifth level, 3.75 BB each: the exploit folds the hands the
-    // equilibrium pushes into a certain call. Deeper, its edge in chips
-    // comes from pushing more coin flips, which a hero already ahead of the
-    // field barely turns into wins (ADR 0007).
-    let mut structure = Structure::expresso_nitro();
-    structure.levels.drain(..4);
-    let stations = [0; 3].map(|_| Arc::new(Station) as Arc<dyn SeatStrategy>);
+    // Whole Expresso Nitro, from 15 BB. The population calls every push and
+    // never opens, so the two heroes only part ways on their own pushes: the
+    // pairing then cancels most of the luck, and 10 000 games show the
+    // exploit's edge (about +0.4 pt). Against stations that also open, the
+    // edge is lost in the noise of their pushes (ADR 0007).
+    let structure = Structure::expresso_nitro();
+    let stations = [0; 3].map(|_| Arc::new(Station { opens: 0.0 }) as Arc<dyn SeatStrategy>);
     let model = Arc::new(population_of(structure.clone(), stations, 2_000, false));
     let bot = Arc::new(PopulationBot::new(Arc::clone(&model))) as Arc<dyn SeatStrategy>;
     let against = |hero: SolverHero| {
@@ -55,7 +55,7 @@ fn against_a_population_that_calls_too_often_the_exploit_wins_more_than_the_equi
             bot.clone(),
             bot.clone(),
         ];
-        config(structure.clone(), seats, 20_000, 12)
+        config(structure.clone(), seats, 10_000, 12)
     };
 
     let comparison = compare(

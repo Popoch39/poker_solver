@@ -19,9 +19,15 @@
 //! - A move that puts every opponent still in all-in is a push (or a call
 //!   when facing one), whatever its size: the tree's all-in is for the
 //!   effective stack.
-//! - Limps, raises short of all-in and what follows them, and every
-//!   postflop decision, are counted apart in [`OffTree`]. The decisions
-//!   before a hand leaves the tree still count at their nodes.
+//! - First in (BTN or SB open), every action counts at its node, limps and
+//!   raises short of all-in included ([`NodeStats::actions`],
+//!   [`NodeStats::other_raises`]): the frequencies there are unconditional.
+//!   Locked into the push/fold tree, every first-in decision but a fold is
+//!   a push ([`NodeStats::strategy`]).
+//! - Leaving the tree, and what follows (decisions facing a limp or a
+//!   raise short of all-in, every postflop decision), is also counted apart
+//!   in [`OffTree`]. The decisions before a hand leaves the tree still count
+//!   at their nodes.
 //!
 //! [`LeakReport::build`] compares the hero's model to the equilibrium of the
 //! solver, node by node, with the chips each deviation is estimated to cost.

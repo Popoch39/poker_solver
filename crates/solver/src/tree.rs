@@ -177,6 +177,12 @@ impl Node {
         }
     }
 
+    /// The last and most aggressive of [`Node::actions`]: the push, or the
+    /// call when facing one. The push/fold frequency of a node is its share.
+    pub fn aggressive_action(self) -> Action {
+        *self.actions().last().expect("every node has actions")
+    }
+
     /// Short identifier used on the command line and in exports
     /// (`btn-open`, `bb-vs-sb-push`, `bb-vs-btn-limp-sb-limp`…): the actor,
     /// then `open` or `vs` and each voluntary action before the node.

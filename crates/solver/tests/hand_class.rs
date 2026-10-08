@@ -1,4 +1,28 @@
 use nitro_solver::HandClass;
+use rs_poker::core::{Card, Suit, Value};
+
+#[test]
+fn two_cards_make_their_class_whatever_their_order() {
+    let card = |value, suit| Card::new(value, suit);
+    let class = |a, b| HandClass::from_cards(a, b).to_string();
+    let ace_of_spades = card(Value::Ace, Suit::Spade);
+    assert_eq!(class(ace_of_spades, card(Value::King, Suit::Spade)), "AKs");
+    assert_eq!(class(card(Value::King, Suit::Spade), ace_of_spades), "AKs");
+    assert_eq!(
+        class(
+            card(Value::Seven, Suit::Heart),
+            card(Value::King, Suit::Club)
+        ),
+        "K7o"
+    );
+    assert_eq!(
+        class(
+            card(Value::Two, Suit::Diamond),
+            card(Value::Two, Suit::Club)
+        ),
+        "22"
+    );
+}
 
 #[test]
 fn there_are_169_hand_classes_covering_1326_combos() {

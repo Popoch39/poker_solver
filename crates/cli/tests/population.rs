@@ -32,12 +32,29 @@ fn population_prints_frequencies_per_node_and_stack_bucket() {
         "{out}"
     );
     assert!(
-        out.contains("BB vs SB push, 2–4 BB: call 100.0% on 1 (1 shown)"),
+        out.contains("BB vs SB push, 2–4 BB: fold 0.0%, call 100.0% on 1; 1 call shown"),
         "{out}"
     );
     assert!(
         out.contains("SB: limp 0, min-raise 1, raise 0, other 0"),
         "{out}"
+    );
+}
+
+#[test]
+fn population_prints_every_first_in_action_of_an_opening_node() {
+    let output = nitro(&["population", &fixtures()]);
+    let out = String::from_utf8(output.stdout).unwrap();
+    // The opponent's min-raise from the SB, heads-up.
+    let line = out
+        .lines()
+        .find(|l| l.starts_with("SB open, "))
+        .unwrap_or_else(|| panic!("{out}"));
+    assert!(
+        line.ends_with(
+            "fold 0.0%, limp 0.0%, min-raise 100.0%, raise 0.0%, push 0.0% on 1; 0 push shown"
+        ),
+        "{line}"
     );
 }
 

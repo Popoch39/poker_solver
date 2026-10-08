@@ -67,10 +67,10 @@ pub fn on_flop(mut view: SeatView) -> SeatView {
 }
 
 /// The decisions a strategy takes at `view` over many draws, as shares of
-/// fold, call and all-in.
-pub fn shares(strategy: &dyn SeatStrategy, view: &SeatView) -> [f64; 3] {
+/// fold, call, all-in and min-raise.
+pub fn shares(strategy: &dyn SeatStrategy, view: &SeatView) -> [f64; 4] {
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
-    let mut counts = [0u32; 3];
+    let mut counts = [0u32; 4];
     let draws = 2_000;
     for _ in 0..draws {
         let decision = strategy.decide(view, &mut rng as &mut dyn Rng);

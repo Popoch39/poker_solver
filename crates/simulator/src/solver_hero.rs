@@ -127,7 +127,7 @@ impl SeatStrategy for SolverHero {
         let Some(strategy) = solution.strategy(decision.node, decision.hand) else {
             return Decision::Call;
         };
-        let aggressive = *decision.node.actions().last().expect("a node has actions");
+        let aggressive = decision.node.aggressive_action();
         let action = if rng.random::<f64>() < strategy.frequency(aggressive) {
             aggressive
         } else {

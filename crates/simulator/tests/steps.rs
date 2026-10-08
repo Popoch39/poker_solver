@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use nitro_hh::ActionKind;
 use nitro_simulator::{
     ActError, Decision, NitroGame, Seat, SeatStrategy, Step, Street, Structure, TrivialBot,
 };
@@ -115,6 +116,44 @@ fn an_external_seat_plays_a_whole_game() {
     places.sort();
     assert_eq!(places, [1, 2, 3]);
     assert_eq!(game.stacks().iter().sum::<f32>(), 900.0);
+}
+
+#[test]
+fn an_unraised_pot_can_be_min_raised_to_two_big_blinds_once() {
+    let mut game = NitroGame::with_seats(
+        Structure::expresso_nitro(),
+        [Seat::External, Seat::External, Seat::External],
+        3,
+    );
+    until_external(&mut game);
+    let opener = game.pending_decision().unwrap().clone();
+    assert_eq!(opener.to_call, 20.0);
+    assert!(opener.legal_decisions().contains(&Decision::MinRaise));
+    game.act(Decision::MinRaise).unwrap();
+
+    // Raised, the pot cannot be min-raised again; then postflop, nor bet.
+    let mut asked = 0;
+    while let Some(view) = game.pending_decision().cloned() {
+        asked += 1;
+        assert!(!view.legal_decisions().contains(&Decision::MinRaise));
+        assert_eq!(
+            game.act(Decision::MinRaise),
+            Err(ActError::Illegal(Decision::MinRaise))
+        );
+        if view.street == Street::Preflop {
+            assert_eq!(view.to_call, 40.0 - view.players[view.seat].street_bet);
+        }
+        game.act(Decision::Call).unwrap();
+    }
+    assert!(asked >= 2);
+    let history = game.hand_history(None).unwrap();
+    let raise = history
+        .actions
+        .iter()
+        .find(|a| matches!(a.kind, ActionKind::Raise { .. }))
+        .unwrap();
+    assert_eq!(raise.kind, ActionKind::Raise { to: 40 });
+    assert_eq!(raise.seat, opener.seat as u8 + 1);
 }
 
 #[test]

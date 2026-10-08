@@ -12,7 +12,7 @@
 //! against them and costs against the equilibrium. The tabular
 //! CFR engine behind it is an internal detail (see
 //! `docs/adr/0001-cfr-plus-maison-sur-169-classes.md`,
-//! `docs/adr/0003-banque-de-donnes-stratifiee-et-dcfr.md` and
+//! `docs/adr/0003-banque-de-donnees-stratifiee-et-dcfr.md` and
 //! `docs/adr/0005-modele-d-equite-au-flop-pour-le-limp-et-le-min-raise.md`).
 
 mod betting_tree;

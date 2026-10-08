@@ -58,6 +58,7 @@ pub struct Layout {
     pub fold: Rect,
     pub call: Rect,
     pub all_in: Rect,
+    pub min_raise: Rect,
 }
 
 /// The regions of one seat.
@@ -138,6 +139,7 @@ pub const LAYOUT: Layout = Layout {
     fold: button(220),
     call: button(400),
     all_in: button(580),
+    min_raise: button(760),
 };
 
 impl Layout {
@@ -147,6 +149,7 @@ impl Layout {
             Decision::Fold => self.fold,
             Decision::Call => self.call,
             Decision::AllIn => self.all_in,
+            Decision::MinRaise => self.min_raise,
         }
     }
 }

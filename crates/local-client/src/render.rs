@@ -213,6 +213,7 @@ const DEALER_TEXT: Rgb = Rgb(20, 20, 20);
 const FOLD: Rgb = Rgb(170, 50, 50);
 const CALL: Rgb = Rgb(40, 110, 170);
 const ALL_IN: Rgb = Rgb(200, 120, 30);
+const MIN_RAISE: Rgb = Rgb(120, 70, 160);
 
 /// A four-colour deck: no two suits share a colour.
 fn suit_color(suit: Suit) -> Rgb {
@@ -291,6 +292,7 @@ fn button_label(view: &TableView, decision: Decision) -> String {
         Decision::Call if view.to_call == 0.0 => "CHECK".to_owned(),
         Decision::Call => format!("CALL {}", chips(view.to_call)),
         Decision::AllIn => format!("ALL-IN {}", chips(view.seats[view.observer].stack)),
+        Decision::MinRaise => format!("RAISE {}", chips(2.0 * view.big_blind)),
     }
 }
 
@@ -371,6 +373,7 @@ pub fn render(view: &TableView, names: &[String; 3], status: &str) -> Frame {
             Decision::Fold => FOLD,
             Decision::Call => CALL,
             Decision::AllIn => ALL_IN,
+            Decision::MinRaise => MIN_RAISE,
         };
         frame.fill(rect, color);
         let text = Rect::new(
