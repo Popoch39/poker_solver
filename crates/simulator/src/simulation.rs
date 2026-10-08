@@ -72,12 +72,8 @@ pub enum Verdict {
     Undecided,
 }
 
-/// What one strategy wins over another at the same seat, from two
-/// simulations of the same games.
-///
-/// The intervals treat the two simulations as independent samples. With
-/// the same seed, both are dealt the same cards until their play differs,
-/// so the true interval is narrower: these are conservative.
+/// What one strategy wins over another at the same seat, played on the same
+/// games.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Gain {
     /// Difference of the win rates.
@@ -88,23 +84,54 @@ pub struct Gain {
     pub roi_ci95: (f64, f64),
 }
 
-impl Gain {
-    /// What `seat` wins in `report` over the same seat in `baseline`.
-    pub fn of(report: &Report, baseline: &Report, seat: usize) -> Gain {
-        let (a, b) = (&report.seats[seat], &baseline.seats[seat]);
-        let win_rate_variance =
-            |s: &SeatReport, games: u64| s.win_rate * (1.0 - s.win_rate) / games.max(1) as f64;
-        let win_rate_half = Z95
-            * (win_rate_variance(a, report.games) + win_rate_variance(b, baseline.games)).sqrt();
-        let half = |(low, high): (f64, f64)| (high - low) / 2.0;
-        let roi_half = half(a.roi_ci95).hypot(half(b.roi_ci95));
-        let (win_rate, roi) = (a.win_rate - b.win_rate, a.roi - b.roi);
-        Gain {
+/// Two simulations of the same games that differ by the strategy at one
+/// seat, and what the challenger wins over the baseline there.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Comparison {
+    pub baseline: Report,
+    pub challenger: Report,
+    pub gain: Gain,
+}
+
+/// Plays the games of `baseline` and of `challenger`, the same games but for
+/// the strategies, and compares them at `seat`.
+///
+/// The gain's intervals pair the games: game *i* is dealt the same cards in
+/// both until the players' stacks part ways, so the luck of the deal
+/// cancels out and the intervals are much narrower than those of two
+/// independent samples.
+///
+/// # Panics
+/// If the two simulations are not of the same games (count, seed, prizes
+/// and structure).
+pub fn compare(
+    baseline: &SimulationConfig,
+    challenger: &SimulationConfig,
+    seat: usize,
+) -> Comparison {
+    assert!(
+        baseline.games == challenger.games
+            && baseline.seed == challenger.seed
+            && baseline.prize_table == challenger.prize_table
+            && baseline.structure == challenger.structure,
+        "strategies are compared on the same games"
+    );
+    let (ours, theirs) = (play_games(baseline), play_games(challenger));
+    let table = &baseline.prize_table;
+    let pairs = || ours.iter().zip(&theirs);
+    let won = |game: &GameOutcome| f64::from(u8::from(game.places[seat] == 1));
+    let net = |game: &GameOutcome| table.prize(game.multiplier, game.places[seat]) - 1.0;
+    let (win_rate, win_rate_ci95) = mean_ci95(pairs().map(|(b, c)| won(c) - won(b)));
+    let (roi, roi_ci95) = mean_ci95(pairs().map(|(b, c)| net(c) - net(b)));
+    Comparison {
+        baseline: report(baseline, &ours),
+        challenger: report(challenger, &theirs),
+        gain: Gain {
             win_rate,
-            win_rate_ci95: (win_rate - win_rate_half, win_rate + win_rate_half),
+            win_rate_ci95,
             roi,
-            roi_ci95: (roi - roi_half, roi + roi_half),
-        }
+            roi_ci95,
+        },
     }
 }
 
@@ -115,29 +142,43 @@ struct GameOutcome {
 
 /// Plays `config.games` games on every core of the current rayon pool.
 pub fn simulate(config: &SimulationConfig) -> Report {
+    report(config, &play_games(config))
+}
+
+fn play_games(config: &SimulationConfig) -> Vec<GameOutcome> {
     // Games are seeded by index and summed in index order, so neither the
     // scheduling nor the thread count changes the result.
-    let outcomes: Vec<GameOutcome> = (0..config.games)
+    (0..config.games)
         .into_par_iter()
         .map(|index| play_game(config, index))
-        .collect();
+        .collect()
+}
+
+/// Mean of `values`, with its 95 % interval by the normal approximation.
+fn mean_ci95(values: impl Iterator<Item = f64>) -> (f64, (f64, f64)) {
+    let (mut n, mut sum, mut sum_sq) = (0.0, 0.0, 0.0);
+    for value in values {
+        n += 1.0;
+        sum += value;
+        sum_sq += value * value;
+    }
+    let mean = sum / n;
+    let variance = (sum_sq - n * mean * mean) / (n - 1.0).max(1.0);
+    let half_width = Z95 * (variance.max(0.0) / n).sqrt();
+    (mean, (mean - half_width, mean + half_width))
+}
+
+fn report(config: &SimulationConfig, outcomes: &[GameOutcome]) -> Report {
     let table = &config.prize_table;
     let break_even_win_rate = table.break_even_win_rate();
     let seats = std::array::from_fn(|seat| {
-        let mut wins = 0;
-        let (mut sum, mut sum_sq) = (0.0, 0.0);
-        for game in &outcomes {
-            let place = game.places[seat];
-            wins += u64::from(place == 1);
-            let net = table.prize(game.multiplier, place) - 1.0;
-            sum += net;
-            sum_sq += net * net;
-        }
-        let n = outcomes.len() as f64;
-        let win_rate = wins as f64 / n;
-        let roi = sum / n;
-        let variance = (sum_sq - n * roi * roi) / (n - 1.0).max(1.0);
-        let half_width = Z95 * (variance.max(0.0) / n).sqrt();
+        let wins = outcomes.iter().filter(|g| g.places[seat] == 1).count() as u64;
+        let win_rate = wins as f64 / outcomes.len() as f64;
+        let (roi, roi_ci95) = mean_ci95(
+            outcomes
+                .iter()
+                .map(|g| table.prize(g.multiplier, g.places[seat]) - 1.0),
+        );
         let win_rate_ci95 = wilson_interval(wins, outcomes.len() as u64);
         SeatReport {
             name: config.seats[seat].name().to_owned(),
@@ -146,7 +187,7 @@ pub fn simulate(config: &SimulationConfig) -> Report {
             win_rate_ci95,
             break_even_gap: win_rate - break_even_win_rate,
             roi,
-            roi_ci95: (roi - half_width, roi + half_width),
+            roi_ci95,
             verdict: match win_rate_ci95 {
                 (low, _) if low > break_even_win_rate => Verdict::AboveBreakEven,
                 (_, high) if high < break_even_win_rate => Verdict::BelowBreakEven,

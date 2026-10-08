@@ -173,17 +173,22 @@ fn the_hero_plays_the_equilibrium_of_the_spot_at_hand() {
 #[test]
 fn nearby_stacks_share_one_solve() {
     let hero = SolverHero::equilibrium(options());
-    let mut deeper = HEADS_UP_10_BB;
-    // 10.25 BB rounds to 10 BB; a covering stack plays like the effective.
-    deeper[0].1 += 5.0;
-    deeper[1].1 += 1_000.0;
+    let mut nearby = HEADS_UP_10_BB;
+    // 9.75 BB rounds to 10 BB; a covering stack plays like the effective.
+    nearby[0].1 -= 5.0;
+    nearby[1].1 += 1_000.0;
     shares(&hero, &view(0, "Ah Ad", &HEADS_UP_10_BB));
-    shares(&hero, &view(0, "Ah Ad", &deeper));
+    shares(&hero, &view(0, "Ah Ad", &nearby));
     assert_eq!(hero.spots_solved(), 1);
     let mut shorter = HEADS_UP_10_BB;
     shorter[0].1 -= 60.0;
     shares(&hero, &view(0, "Ah Ad", &shorter));
     assert_eq!(hero.spots_solved(), 2);
+    // 10.25 BB is in the population's 10–12 BB bucket, 10 BB in 8–10 BB.
+    let mut next_bucket = HEADS_UP_10_BB;
+    next_bucket[0].1 += 5.0;
+    shares(&hero, &view(0, "Ah Ad", &next_bucket));
+    assert_eq!(hero.spots_solved(), 3);
 }
 
 #[test]
@@ -209,4 +214,36 @@ fn against_a_population_that_calls_too_often_the_hero_exploits_it() {
     assert!(push(&equilibrium, "Qh 4c") < 0.01);
     assert!(push(&exploit, "6h 5h") < 0.01);
     assert!(push(&exploit, "Qh 4c") > 0.99);
+}
+
+#[test]
+fn the_hero_exploits_the_population_seen_at_the_very_stacks_of_the_spot() {
+    // Only the first hands: the population is known at 15 BB, three-handed,
+    // and nowhere deeper.
+    let model = population_of(
+        Structure::expresso_nitro(),
+        [0; 3].map(|_| Arc::new(Station) as Arc<dyn SeatStrategy>),
+        500,
+        true,
+    );
+    let equilibrium = SolverHero::equilibrium(options());
+    let exploit = SolverHero::exploit(Arc::new(model), 20, options());
+
+    // Called every time, the BTN pushes other hands than at equilibrium.
+    let ranks = "AKQJT98765432".chars().collect::<Vec<_>>();
+    let mut changed = 0;
+    for (i, &high) in ranks.iter().enumerate() {
+        for &low in &ranks[i..] {
+            for suits in ["hc", "hh"] {
+                if high == low && suits == "hh" {
+                    continue;
+                }
+                let s: Vec<char> = suits.chars().collect();
+                let cards = format!("{high}{} {low}{}", s[0], s[1]);
+                let push = |hero: &SolverHero| shares(hero, &view(0, &cards, &BTN_OPEN))[2];
+                changed += usize::from((push(&exploit) - push(&equilibrium)).abs() > 0.5);
+            }
+        }
+    }
+    assert!(changed >= 10, "{changed} hands changed");
 }

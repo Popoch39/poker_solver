@@ -1,5 +1,6 @@
 //! Expresso Nitro tournament simulator.
 
+mod apart;
 mod game;
 mod history;
 mod population_bot;
@@ -19,7 +20,8 @@ pub use seat::{
     Suit, TrivialBot, Value,
 };
 pub use simulation::{
-    Gain, Report, SeatReport, SimulationConfig, Verdict, hand_histories, simulate,
+    Comparison, Gain, Report, SeatReport, SimulationConfig, Verdict, compare, hand_histories,
+    simulate,
 };
 pub use solver_hero::SolverHero;
 pub use structure::{BlindLevel, NITRO_BLIND_LEVELS, Structure};

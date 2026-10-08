@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use nitro_hh::ohh::write_hand;
 use nitro_hh::to_ohh;
 use nitro_simulator::{
-    Gain, PopulationBot, PrizeTable, SeatReport, SeatStrategy, SimulationConfig, SolverHero,
-    Structure, Verdict, hand_histories, simulate,
+    PopulationBot, PrizeTable, SeatReport, SeatStrategy, SimulationConfig, SolverHero, Structure,
+    Verdict, compare, hand_histories, simulate,
 };
 use nitro_solver::SolveOptions;
 
@@ -101,22 +101,31 @@ pub fn run(args: &Args) -> ExitCode {
         model.hands()
     );
     let bot: Arc<dyn SeatStrategy> = Arc::new(PopulationBot::new(Arc::clone(&model)));
-    let mut runs = Vec::new();
-    for hero in heroes {
-        let hero = Arc::new(hero);
-        let config = SimulationConfig {
+    let heroes: Vec<Arc<SolverHero>> = heroes.into_iter().map(Arc::new).collect();
+    let configs: Vec<SimulationConfig> = heroes
+        .iter()
+        .map(|hero| SimulationConfig {
             prize_table: args.buy_in.clone(),
             structure: structure.clone(),
             games: args.games,
             seed: args.seed,
             seats: [hero.clone(), bot.clone(), bot.clone()],
-        };
-        let start = Instant::now();
-        let report = simulate(&config);
-        let elapsed = start.elapsed();
-        if let Some(dir) = &args.ohh {
+        })
+        .collect();
+    let start = Instant::now();
+    let (reports, gain) = match &configs[..] {
+        [equilibrium, exploit] => {
+            let comparison = compare(equilibrium, exploit, HERO_SEAT);
+            let reports = vec![comparison.baseline, comparison.challenger];
+            (reports, Some(comparison.gain))
+        }
+        _ => (configs.iter().map(simulate).collect(), None),
+    };
+    let elapsed = start.elapsed();
+    if let Some(dir) = &args.ohh {
+        for (hero, config) in heroes.iter().zip(&configs) {
             let path = dir.join(format!("{}.ohh", hero.name()));
-            match write_ohh(&config, args.ohh_games.min(args.games), &path) {
+            match write_ohh(config, args.ohh_games.min(args.games), &path) {
                 Ok(hands) => println!("{hands} hands written to {}", path.display()),
                 Err(err) => {
                     eprintln!("error: cannot write {}: {err}", path.display());
@@ -124,10 +133,9 @@ pub fn run(args: &Args) -> ExitCode {
                 }
             }
         }
-        runs.push((hero, report, elapsed));
     }
 
-    let first = &runs[0].1;
+    let first = &reports[0];
     println!(
         "Expresso Nitro {} € (rake {} %), {} games, seed {}, {} hands per level ({} heads-up)",
         euros_label(first.buy_in_cents),
@@ -142,15 +150,14 @@ pub fn run(args: &Args) -> ExitCode {
         100.0 * first.break_even_win_rate,
         first.average_multiplier
     );
-    for (_, report, _) in &runs {
+    for report in &reports {
         print_seat(&report.seats[HERO_SEAT]);
     }
-    if let [(_, equilibrium, _), (_, exploit, _)] = &runs[..] {
-        let gain = Gain::of(exploit, equilibrium, HERO_SEAT);
+    if let Some(gain) = gain {
         let (wl, wh) = gain.win_rate_ci95;
         let (rl, rh) = gain.roi_ci95;
         println!(
-            "exploit - equilibrium: win rate {:+.1} pts [{:+.1}, {:+.1}]  ROI {:+.1} % [{:+.1}, {:+.1}]",
+            "exploit - equilibrium, paired on the same games: win rate {:+.1} pts [{:+.1}, {:+.1}]  ROI {:+.1} % [{:+.1}, {:+.1}]",
             100.0 * gain.win_rate,
             100.0 * wl,
             100.0 * wh,
@@ -159,15 +166,15 @@ pub fn run(args: &Args) -> ExitCode {
             100.0 * rh,
         );
     }
-    for (hero, _, elapsed) in &runs {
+    for hero in &heroes {
         println!(
-            "{}: {} spots solved in {}, {} for the whole simulation",
+            "{}: {} spots solved in {}",
             hero.name(),
             hero.spots_solved(),
             seconds(hero.solving_time()),
-            seconds(*elapsed),
         );
     }
+    println!("simulation: {} in all", seconds(elapsed));
     ExitCode::SUCCESS
 }
 

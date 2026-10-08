@@ -3,12 +3,13 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use nitro_population::PopulationModel;
+use nitro_population::{PopulationModel, StackBucket};
 use nitro_solver::{Action, Position as TreePosition, Solution, SolveOptions, Spot, solve};
 use rand::{Rng, RngExt};
 
+use crate::apart;
 use crate::push_fold::{self, Reading};
 use crate::seat::{Decision, Position, SeatStrategy, SeatView};
 
@@ -16,20 +17,20 @@ use crate::seat::{Decision, Position, SeatStrategy, SeatView};
 /// hand, solved the first time they are met and cached.
 ///
 /// - **Stacks** are rounded before solving, so that nearby stacks share a
-///   solve: to 0.25 BB below 2 BB, 0.5 BB below 5 BB, 1 BB below 12 BB,
-///   2 BB below 20 BB and 5 BB above. Chips nobody can win are left out: a
+///   solve: to 0.25 BB below 2 BB, 0.5 BB below 5 BB, 1 BB below 16 BB,
+///   2 BB below 20 BB and 5 BB above, but never out of the population's
+///   stack bucket ([`StackBucket`]). Chips nobody can win are left out: a
 ///   3-max stack is capped at the second largest, a heads-up one at the
 ///   effective stack.
 /// - **Exploit**: the spot is locked on the population before it is solved
 ///   ([`PopulationModel::lock`]), for the hero's position, and solved again
 ///   for each position the hero meets it from.
 /// - **Off the tree**, the hero follows the fallback policy of the
-///   push/fold strategies (ADR 0006): check or call postflop, a limp or a
+///   push/fold strategies (ADR 0007): check or call postflop, a limp or a
 ///   raise short of all-in answered as a push.
 ///
 /// Solves run one at a time in a thread pool of their own, every core
-/// helping: a game thread of the simulation waits for them without picking
-/// up other games, which could wait on the same solve.
+/// helping, apart from the games that wait for them.
 pub struct SolverHero {
     name: &'static str,
     exploit: Option<(Arc<PopulationModel>, u32)>,
@@ -95,11 +96,15 @@ impl SolverHero {
         );
         let cell = Arc::clone(lock(&self.cache).entry(key).or_default());
         Arc::clone(cell.get_or_init(|| {
-            let spot = match &self.exploit {
-                Some((population, min_sample)) => population.lock(spot, hero, *min_sample),
-                None => spot,
-            };
-            let (solution, took) = solve_apart(&spot, &self.options);
+            // Locking ranks hands by an equity table the solver builds
+            // lazily: it runs apart from the games, like the solve.
+            let (solution, took) = apart::run(|| {
+                let spot = match &self.exploit {
+                    Some((population, min_sample)) => population.lock(spot, hero, *min_sample),
+                    None => spot,
+                };
+                solve(&spot, &self.options)
+            });
             *lock(&self.solving) += took;
             Arc::new(solution)
         }))
@@ -158,46 +163,25 @@ fn rounded(spot: &Spot) -> Spot {
     .expect("rounded stacks stay positive")
 }
 
-/// The stack grid: finer where push/fold play changes quickly.
+/// The stack grid: finer where push/fold play changes quickly, and never
+/// across a population stack bucket, so that an exploit is locked on the
+/// population met at the stacks really played.
 fn round(bb: f64) -> f64 {
     let step = match bb {
         _ if bb < 2.0 => 0.25,
         _ if bb < 5.0 => 0.5,
-        _ if bb < 12.0 => 1.0,
+        _ if bb < 16.0 => 1.0,
         _ if bb < 20.0 => 2.0,
         _ => 5.0,
     };
-    ((bb / step).round() * step).max(0.25)
-}
-
-/// Solves in the solver's own pool, one solve at a time, and says how long
-/// the solve took once its turn came.
-///
-/// Waiting for a solve from a thread of the simulation's rayon pool would
-/// let that thread run other games meanwhile, one of which could wait on
-/// the very solve it is nested in. A plain thread waits without that. One
-/// solve at a time, for the solver itself fills its tables lazily from its
-/// own rayon tasks.
-fn solve_apart(spot: &Spot, options: &SolveOptions) -> (Solution, Duration) {
-    static POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
-    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
-    let pool = POOL.get_or_init(|| {
-        rayon::ThreadPoolBuilder::new()
-            .thread_name(|i| format!("solver-{i}"))
-            .build()
-            .expect("the solver's thread pool starts")
-    });
-    std::thread::scope(|scope| {
-        scope
-            .spawn(|| {
-                let _turn = lock(&ONE_AT_A_TIME);
-                let start = Instant::now();
-                let solution = pool.install(|| solve(spot, options));
-                (solution, start.elapsed())
-            })
-            .join()
-            .expect("the solver does not panic")
-    })
+    let rounded = ((bb / step).round() * step).max(0.25);
+    let bucket = StackBucket::of(bb);
+    match StackBucket::of(rounded) {
+        // Buckets are wider than a step: one step back lands inside.
+        b if b < bucket => rounded + step,
+        b if b > bucket => rounded - step,
+        _ => rounded,
+    }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

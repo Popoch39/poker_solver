@@ -6,6 +6,7 @@ use nitro_population::{NodeStats, PopulationModel, StackBucket, TableSize};
 use nitro_solver::{Action, HandClass, Node, Spot};
 use rand::{Rng, RngExt};
 
+use crate::apart;
 use crate::push_fold::{self, Reading};
 use crate::seat::{Decision, SeatStrategy, SeatView};
 
@@ -21,19 +22,18 @@ use crate::seat::{Decision, SeatStrategy, SeatView};
 /// - Limps and min-raises, which the push/fold tree has no place for, are
 ///   never played: the bot pushes or folds where the population limped.
 ///   Facing them, and postflop, it follows the fallback policy of the
-///   push/fold strategies (ADR 0006).
+///   push/fold strategies (ADR 0007).
 pub struct PopulationBot {
     model: Arc<PopulationModel>,
 }
 
 impl PopulationBot {
     pub fn new(model: Arc<PopulationModel>) -> PopulationBot {
-        // Ranking the hands builds an equity table on first use, with rayon.
-        // From a game thread of the simulation, the thread could take up
-        // another game while it waits, which would wait on the same table.
+        // Ranking the hands builds an equity table on first use: built here,
+        // apart from the games, rather than from a game thread.
         if let (Some((_, _, stats)), Some(hand)) = (model.entries().next(), HandClass::all().next())
         {
-            stats.strategy(hand);
+            apart::run(|| stats.strategy(hand));
         }
         PopulationBot { model }
     }

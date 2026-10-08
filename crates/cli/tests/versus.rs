@@ -72,7 +72,10 @@ fn versus_compares_equilibrium_and_exploit_against_the_population() {
             "{line}"
         );
     }
-    assert!(out.contains("exploit - equilibrium: win rate"), "{out}");
+    assert!(
+        out.contains("exploit - equilibrium, paired on the same games: win rate"),
+        "{out}"
+    );
     assert!(out.contains("spots solved"), "{out}");
 }
 

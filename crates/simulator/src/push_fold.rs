@@ -2,7 +2,7 @@
 //! with the fallback policy for what the tree does not cover. The solver's
 //! hero and the population bots share it, so that they meet the same tree.
 //!
-//! # Fallback policy (see ADR 0006)
+//! # Fallback policy (see ADR 0007)
 //!
 //! - **Postflop**, and **preflop once the player has put chips in
 //!   voluntarily** (it called a push and someone moved in over it): check
@@ -11,7 +11,9 @@
 //! - **A limp or a raise short of all-in** counts as a push of the same
 //!   player: the player answers at the node facing that push, its call
 //!   becoming an all-in (an isolation) and its fold a check when there is
-//!   nothing to call. Ticket #5 brings limps and min-raises into the tree.
+//!   nothing to call. The solver now has limps and min-raises (ADR 0005),
+//!   but the population model has no node for them, neither to lock nor to
+//!   play from: the simulation stays on the push/fold tree.
 //! - **A node missing from the solved tree** (the player is all-in from the
 //!   blind, or the stacks rounding moved the blind's all-in) is a call: such
 //!   a player has nothing left to decide.
