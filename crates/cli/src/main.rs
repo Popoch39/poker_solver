@@ -17,7 +17,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use nitro_solver::{Action, HandClass, Node, Solution, SolveOptions, Spot, solve};
+use nitro_solver::{
+    Action, HandClass, Node, RealizationFactors, Solution, SolveOptions, Spot, solve,
+};
 
 #[derive(Parser)]
 #[command(version, about = "Expresso Nitro preflop study tool")]
@@ -28,34 +30,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Solve a push/fold spot and print its equilibrium ranges.
-    Solve {
-        /// Stacks in big blinds before posting the blinds: BTN,SB,BB for
-        /// 3-max (0 for an eliminated player), SB,BB for heads-up.
-        #[arg(long, value_delimiter = ',', value_name = "BTN,SB,BB", required = true)]
-        stacks: Vec<f64>,
-        /// Maximum number of solver iterations.
-        #[arg(long, default_value_t = SolveOptions::default().iterations)]
-        iterations: u32,
-        /// Stop once the exploitability is below this, in mBB per hand
-        /// (0 runs every iteration).
-        #[arg(
-            long,
-            value_name = "MBB",
-            default_value_t = 1000.0 * SolveOptions::default().target_exploitability.unwrap_or(0.0)
-        )]
-        target: f64,
-        /// Only print the strategy of this hand (e.g. K7o, AKs, 99).
-        #[arg(long)]
-        hand: Option<HandClass>,
-        /// Restrict --hand to one node (e.g. btn-open, sb-vs-btn-push).
-        #[arg(long, requires = "hand")]
-        node: Option<Node>,
-        /// Also write the solution to this CSV file (one row per node, hand
-        /// and action).
-        #[arg(long, value_name = "FILE")]
-        csv: Option<PathBuf>,
-    },
+    /// Solve a spot (push/fold, plus limps and min-raises if allowed) and
+    /// print its equilibrium ranges.
+    Solve(SolveArgs),
     /// Play many Expresso Nitro between bots and report win rate and ROI.
     Simulate(simulate::Args),
     /// Parse Winamax Expresso Nitro hand histories and summaries, and report
@@ -85,16 +62,70 @@ enum Command {
     Versus(versus::Args),
 }
 
+#[derive(clap::Args)]
+struct SolveArgs {
+    /// Stacks in big blinds before posting the blinds: BTN,SB,BB for
+    /// 3-max (0 for an eliminated player), SB,BB for heads-up.
+    #[arg(long, value_delimiter = ',', value_name = "BTN,SB,BB", required = true)]
+    stacks: Vec<f64>,
+    /// Also allow limping (and checking from the BB).
+    #[arg(long)]
+    limp: bool,
+    /// Also allow one min-raise per hand, to 2 BB.
+    #[arg(long)]
+    min_raise: bool,
+    /// Realization factor, heads-up at the flop, of the player out of
+    /// position.
+    #[arg(
+        long,
+        value_name = "FACTOR",
+        allow_negative_numbers = true,
+        default_value_t = RealizationFactors::default().out_of_position
+    )]
+    realization_oop: f64,
+    /// Realization factor, heads-up at the flop, of the player in position.
+    #[arg(
+        long,
+        value_name = "FACTOR",
+        allow_negative_numbers = true,
+        default_value_t = RealizationFactors::default().in_position
+    )]
+    realization_ip: f64,
+    /// Realization factors three-way at the flop, of the SB, the BB and the
+    /// BTN [default: 0.9,1,1.1].
+    #[arg(
+        long,
+        value_delimiter = ',',
+        value_name = "SB,BB,BTN",
+        allow_negative_numbers = true
+    )]
+    realization_3way: Option<Vec<f64>>,
+    /// Maximum number of solver iterations.
+    #[arg(long, default_value_t = SolveOptions::default().iterations)]
+    iterations: u32,
+    /// Stop once the exploitability is below this, in mBB per hand
+    /// (0 runs every iteration).
+    #[arg(
+        long,
+        value_name = "MBB",
+        default_value_t = 1000.0 * SolveOptions::default().target_exploitability.unwrap_or(0.0)
+    )]
+    target: f64,
+    /// Only print the strategy of this hand (e.g. K7o, AKs, 99).
+    #[arg(long)]
+    hand: Option<HandClass>,
+    /// Only print this node (e.g. btn-open, sb-vs-btn-push, bb-vs-sb-limp).
+    #[arg(long)]
+    node: Option<Node>,
+    /// Also write the solution to this CSV file (one row per node, hand
+    /// and action).
+    #[arg(long, value_name = "FILE")]
+    csv: Option<PathBuf>,
+}
+
 fn main() -> ExitCode {
     match Cli::parse().command {
-        Command::Solve {
-            stacks,
-            iterations,
-            target,
-            hand,
-            node,
-            csv,
-        } => run_solve(stacks, iterations, target, hand, node, csv),
+        Command::Solve(args) => run_solve(args),
         Command::Simulate(args) => simulate::run(&args),
         Command::Hh { paths, ohh } => hh::run(&paths, ohh.as_deref()),
         Command::Population(args) => population::run(&args),
@@ -104,22 +135,61 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_solve(
-    stacks: Vec<f64>,
-    iterations: u32,
-    target: f64,
-    hand: Option<HandClass>,
-    node: Option<Node>,
-    csv: Option<PathBuf>,
-) -> ExitCode {
-    let spot = match parse_spot(&stacks) {
+/// The spot of `nitro solve`: its stacks, allowed actions and realization
+/// factors.
+fn spot(args: &SolveArgs) -> Result<Spot, String> {
+    let spot = parse_spot(&args.stacks)?;
+    let defaults = RealizationFactors::default();
+    let [three_way_sb, three_way_bb, three_way_btn] = match args.realization_3way.as_deref() {
+        Some(&[sb, bb, btn]) => [sb, bb, btn],
+        Some(factors) => {
+            return Err(format!(
+                "--realization-3way takes three factors (SB,BB,BTN), got {}",
+                factors.len()
+            ));
+        }
+        None => [
+            defaults.three_way_sb,
+            defaults.three_way_bb,
+            defaults.three_way_btn,
+        ],
+    };
+    let factors = RealizationFactors {
+        out_of_position: args.realization_oop,
+        in_position: args.realization_ip,
+        three_way_sb,
+        three_way_bb,
+        three_way_btn,
+    };
+    spot.with_limp(args.limp)
+        .with_min_raise(args.min_raise)
+        .with_realization(factors)
+        .map_err(|err| err.to_string())
+}
+
+fn run_solve(args: SolveArgs) -> ExitCode {
+    let spot = match spot(&args) {
         Ok(spot) => spot,
         Err(err) => {
             eprintln!("error: {err}");
             return ExitCode::from(2);
         }
     };
+    let SolveArgs {
+        iterations,
+        target,
+        hand,
+        node,
+        csv,
+        ..
+    } = args;
     let solution = solve(&spot, &solve_options(iterations, target));
+    if let Some(node) = node
+        && solution.actions(node).is_none()
+    {
+        eprintln!("error: node {node} is not in this spot's tree");
+        return ExitCode::from(2);
+    }
     if let Some(path) = csv {
         let written = File::create(&path)
             .map(BufWriter::new)
@@ -142,7 +212,7 @@ fn run_solve(
                 print_hand(&solution, node, hand);
             }
         }
-        None => print_report(&solution),
+        None => print_report(&solution, node),
     }
     ExitCode::SUCCESS
 }
@@ -178,7 +248,9 @@ fn print_hand(solution: &Solution, node: Node, hand: HandClass) {
     println!("{hand} at {node}: {}", frequencies.join(", "));
 }
 
-fn print_report(solution: &Solution) {
+/// The spot, the exploitability, then the ranges of every node (or only of
+/// `only`).
+fn print_report(solution: &Solution, only: Option<Node>) {
     let spot = solution.spot();
     let exploitability = solution.exploitability();
     let per_player: Vec<String> = exploitability
@@ -191,13 +263,26 @@ fn print_report(solution: &Solution) {
         .into_iter()
         .map(|position| format!("{position} {} BB", spot.stack(position)))
         .collect();
+    let tree = match (spot.allows_limp(), spot.allows_min_raise()) {
+        (false, false) => "push/fold",
+        (true, false) => "push/fold + limp",
+        (false, true) => "push/fold + min-raise",
+        (true, true) => "push/fold + limp + min-raise",
+    };
     match spot.positions()[..] {
         [_, _] => println!(
-            "Heads-up push/fold, stacks {} (effective {} BB), chip EV",
+            "Heads-up {tree}, stacks {} (effective {} BB), chip EV",
             stacks.join(" / "),
             spot.effective_stack()
         ),
-        _ => println!("3-max push/fold, stacks {}, chip EV", stacks.join(" / ")),
+        _ => println!("3-max {tree}, stacks {}, chip EV", stacks.join(" / ")),
+    }
+    if spot.allows_limp() || spot.allows_min_raise() {
+        let r = spot.realization();
+        println!(
+            "realization factors: heads-up OOP {} / IP {}, three-way SB {} / BB {} / BTN {}",
+            r.out_of_position, r.in_position, r.three_way_sb, r.three_way_bb, r.three_way_btn
+        );
     }
     println!(
         "{} iterations, exploitability {:.4} mBB/hand ({})",
@@ -205,16 +290,25 @@ fn print_report(solution: &Solution) {
         1000.0 * exploitability.total(),
         per_player.join(", ")
     );
-    for &node in solution.nodes() {
-        // The last action of a node is the aggressive one (push or call).
-        let action = *node.actions().last().expect("a node has actions");
-        let share = solution
-            .action_share(node, action)
+    let nodes = match only {
+        Some(node) => vec![node],
+        None => solution.nodes().to_vec(),
+    };
+    for node in nodes {
+        let actions = solution
+            .actions(node)
             .expect("the node belongs to the solved tree");
-        println!();
-        println!("{node}: {action} {:.1}% of combos", 100.0 * share);
-        println!("(% {action} per hand; pairs on the diagonal, suited above, offsuit below)");
-        print_grid(solution, node, action);
+        // The first action is the passive one (fold or check): the grids of
+        // the others say what is left.
+        for &action in &actions[1..] {
+            let share = solution
+                .action_share(node, action)
+                .expect("the node belongs to the solved tree");
+            println!();
+            println!("{node}: {action} {:.1}% of combos", 100.0 * share);
+            println!("(% {action} per hand; pairs on the diagonal, suited above, offsuit below)");
+            print_grid(solution, node, action);
+        }
     }
 }
 

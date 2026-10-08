@@ -141,15 +141,21 @@ fn node_at(seat: usize, live: u8) -> Option<Node> {
     }
 }
 
-/// Payoff when the players in the `live` mask stay in and the others fold.
+/// Payoff when the players in the `live` mask go all-in and the others fold.
+fn payoff(stacks: &[f64; 3], blinds: &[f64; 3], live: usize) -> Payoff {
+    let is_live = |p: usize| live & 1 << p != 0 && stacks[p] > 0.0;
+    let commit: [f64; 3] = std::array::from_fn(|p| if is_live(p) { stacks[p] } else { blinds[p] });
+    showdown_payoff(&commit, is_live)
+}
+
+/// Payoff of a showdown where each player has put `commit` in the pot and
+/// the `is_live` ones are still in, the pot being shared by all-in equity.
 ///
 /// The pot is cut into layers at each player's commitment. A layer is shared
 /// by the live players who committed up to it, by equity; a layer that no
 /// live player reaches only exists on lines the tree never plays, and goes
 /// back to whoever put it in so that chips are still conserved.
-fn payoff(stacks: &[f64; 3], blinds: &[f64; 3], live: usize) -> Payoff {
-    let is_live = |p: usize| live & 1 << p != 0 && stacks[p] > 0.0;
-    let commit: [f64; 3] = std::array::from_fn(|p| if is_live(p) { stacks[p] } else { blinds[p] });
+pub(crate) fn showdown_payoff(commit: &[f64; 3], is_live: impl Fn(usize) -> bool) -> Payoff {
     let mut levels: Vec<f64> = commit.iter().copied().filter(|&c| c > 0.0).collect();
     levels.sort_by(f64::total_cmp);
     levels.dedup();

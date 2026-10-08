@@ -1,11 +1,11 @@
 //! Heads-up push/fold: the SB pushes or folds, the BB calls or folds.
 
-use crate::cfr::{Game, Table};
+use crate::cfr::{self, Game, Table};
 use crate::equity::HeadsUpEquity;
 use crate::hand::NUM_CLASSES;
 use crate::push_fold::{PushFold, SB_BB, Slot};
 use crate::spot::{Position, Spot};
-use crate::tree::Node;
+use crate::tree::{Action, Node};
 
 const FOLD: usize = 0;
 const ALL_IN: usize = 1;
@@ -14,14 +14,17 @@ pub(crate) struct HeadsUpPushFold {
     equity: &'static HeadsUpEquity,
     tree: PushFold,
     nodes: Vec<Node>,
+    actions: Vec<&'static [Action]>,
 }
 
 impl HeadsUpPushFold {
     pub(crate) fn new(spot: &Spot) -> HeadsUpPushFold {
         let tree = PushFold::new(spot);
+        let nodes = tree.decisions();
         HeadsUpPushFold {
             equity: HeadsUpEquity::get(),
-            nodes: tree.decisions(),
+            actions: nodes.iter().map(|n| n.actions()).collect(),
+            nodes,
             tree,
         }
     }
@@ -41,6 +44,14 @@ impl HeadsUpPushFold {
 impl Game for HeadsUpPushFold {
     fn nodes(&self) -> &[Node] {
         &self.nodes
+    }
+
+    fn actions(&self) -> &[&'static [Action]] {
+        &self.actions
+    }
+
+    fn exploitability(&self, profile: &Table, locks: &[Option<&[f64]>]) -> Vec<(Position, f64)> {
+        cfr::one_shot_exploitability(self, profile, locks)
     }
 
     fn action_values(&self, profile: &Table) -> Table {
@@ -68,7 +79,7 @@ impl Game for HeadsUpPushFold {
             }
         }
 
-        let mut values = Table::new(&self.nodes, 0.0);
+        let mut values = profile.zeros_like();
         for (n, &node) in self.nodes.iter().enumerate() {
             let source = match node {
                 Node::SbOpen => &sb_values,

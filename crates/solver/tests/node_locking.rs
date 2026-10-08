@@ -102,6 +102,71 @@ fn without_any_locked_node_the_solve_is_the_equilibrium() {
     }
 }
 
+/// A BB that never raises a limp, whatever it holds.
+fn always_checks(_: HandClass) -> Strategy {
+    Strategy::new([(Action::Check, 1.0)])
+}
+
+#[test]
+fn nodes_of_a_limp_tree_lock_on_their_own_actions_and_keep_them() {
+    let spot = Spot::heads_up(12.0, 12.0).unwrap().with_limp(true);
+    // The SB's open has a limp here, unlike in push/fold.
+    let limper = |_: HandClass| Strategy::new([(Action::Limp, 0.5), (Action::Push, 0.5)]);
+    assert!(spot.clone().lock(Node::SbOpen, limper).is_ok());
+    assert!(
+        Spot::heads_up(12.0, 12.0)
+            .unwrap()
+            .lock(Node::SbOpen, limper)
+            .is_err()
+    );
+
+    let bb_vs_limp: Node = "bb-vs-sb-limp".parse().unwrap();
+    let locked = spot.lock(bb_vs_limp, always_checks).unwrap();
+    assert!(locked.is_locked(bb_vs_limp));
+    let solution = solve(&locked, &SolveOptions::default());
+    for hand in HandClass::all() {
+        assert_eq!(
+            solution.strategy(bb_vs_limp, hand),
+            Some(Strategy::new([(Action::Check, 1.0), (Action::Push, 0.0)])),
+            "{hand}"
+        );
+    }
+    // The BB still decides when the SB pushes, and the SB has nothing left
+    // to gain against it.
+    let exploitability = solution.exploitability();
+    assert!(exploitability.of(Position::Bb) > 0.0);
+    assert!(exploitability.of(Position::Sb) < 1e-4, "{exploitability:?}");
+}
+
+#[test]
+fn against_a_bb_that_never_attacks_limps_the_sb_limps_more_and_wins_more() {
+    // The SB acts again after a limp, so the gain must follow every line.
+    let spot = Spot::heads_up(12.0, 12.0).unwrap().with_limp(true);
+    let bb_vs_limp: Node = "bb-vs-sb-limp".parse().unwrap();
+    let options = SolveOptions {
+        iterations: 2000,
+        target_exploitability: Some(1e-5),
+    };
+    let equilibrium = solve(&spot, &options);
+    let exploit = solve(&spot.lock(bb_vs_limp, always_checks).unwrap(), &options);
+
+    let limps = |s: &nitro_solver::Solution| s.action_share(Node::SbOpen, Action::Limp).unwrap();
+    assert!(
+        limps(&exploit) > limps(&equilibrium) + 0.1,
+        "limps {} against {}",
+        limps(&exploit),
+        limps(&equilibrium)
+    );
+    let gain = exploit.gain_over(&equilibrium, Position::Sb, &exploit);
+    assert!(gain > 0.01, "gain {gain} BB/hand");
+    let edge = exploit.gain_over(&equilibrium, Position::Sb, &equilibrium);
+    assert!(edge < 1e-4, "edge {edge} BB/hand");
+    assert_eq!(
+        equilibrium.gain_over(&equilibrium, Position::Sb, &exploit),
+        0.0
+    );
+}
+
 /// A BB that calls every push, whatever it holds.
 fn calling_station(_: HandClass) -> Strategy {
     Strategy::new([(Action::Call, 1.0)])

@@ -1,8 +1,9 @@
 use std::fmt;
 
+use crate::betting_tree::BettingTree;
 use crate::hand::{HandClass, NUM_CLASSES};
 use crate::solution::Strategy;
-use crate::tree::Node;
+use crate::tree::{Action, Node};
 
 /// A seat at the table, named by its preflop position, in the order the
 /// players act preflop.
@@ -43,25 +44,100 @@ impl fmt::Display for Position {
     }
 }
 
-/// A decision situation to solve: who is at the table and with which stacks,
-/// and which nodes, if any, are locked on a given strategy.
+/// A decision situation to solve: who is at the table, with which stacks,
+/// which actions are allowed, and which nodes, if any, are locked on a given
+/// strategy.
 ///
 /// Stacks are in big blinds, measured before the blinds are posted. A stack
 /// may be smaller than its blind: the player then posts it all and is all-in
 /// without a decision. Payoffs are in chips (no ICM), which matches a
 /// winner-takes-all format.
+///
+/// A new spot is push/fold. [`Spot::with_limp`] and [`Spot::with_min_raise`]
+/// add the other actions; a hand that then reaches the flop with nobody
+/// all-in is valued by the equity model (see [`RealizationFactors`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Spot {
     /// Indexed by [`Position::index`]; a heads-up spot has no BTN (stack 0).
     stacks: [f64; 3],
+    limp: bool,
+    min_raise: bool,
+    realization: RealizationFactors,
     locks: Vec<Lock>,
 }
 
+/// Facteur de réalisation (see the glossary) of each player who sees the
+/// flop, by spot type: how many players see it, and in which position.
+///
+/// A line that reaches the flop with nobody all-in ends there. Each player
+/// still in wins `factor × equity × pot`, where `equity` is the all-in
+/// equity of its hand against the others' hands. A factor of 1 for everyone
+/// values the flop at raw equity. Factors that average 1 at a table keep an
+/// even pot whole; beyond that, the model creates or destroys chips, so a
+/// factor is only meaningful next to the others.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RealizationFactors {
+    /// Two players at the flop: the one who acts first after it (the SB, or
+    /// the BB against the BTN, or the BB heads-up).
+    pub out_of_position: f64,
+    /// Two players at the flop: the one who acts last after it (the BTN, or
+    /// the BB against the SB, or the SB heads-up, where it has the button).
+    pub in_position: f64,
+    /// Three players at the flop: the SB, who acts first after it.
+    pub three_way_sb: f64,
+    /// Three players at the flop: the BB, who acts second.
+    pub three_way_bb: f64,
+    /// Three players at the flop: the BTN, who acts last.
+    pub three_way_btn: f64,
+}
+
+impl RealizationFactors {
+    /// Every hand realizes exactly its equity.
+    pub const RAW_EQUITY: RealizationFactors = RealizationFactors {
+        out_of_position: 1.0,
+        in_position: 1.0,
+        three_way_sb: 1.0,
+        three_way_bb: 1.0,
+        three_way_btn: 1.0,
+    };
+
+    fn all(&self) -> [f64; 5] {
+        [
+            self.out_of_position,
+            self.in_position,
+            self.three_way_sb,
+            self.three_way_bb,
+            self.three_way_btn,
+        ]
+    }
+}
+
+impl Default for RealizationFactors {
+    /// 0.9 out of position and 1.1 in position heads-up; 0.9, 1.0 and 1.1
+    /// three-way from the first to act after the flop to the last.
+    ///
+    /// These are a starting assumption, not a measurement: the player in
+    /// position realizes more than its equity, the one out of position less,
+    /// by a tenth either way, and the factors average 1 so that an even pot
+    /// keeps its size. Tune them per spot type to match a postflop study.
+    fn default() -> Self {
+        RealizationFactors {
+            out_of_position: 0.9,
+            in_position: 1.1,
+            three_way_sb: 0.9,
+            three_way_bb: 1.0,
+            three_way_btn: 1.1,
+        }
+    }
+}
+
 /// A node fixed on a strategy: the frequency of each of the node's actions
-/// (in [`Node::actions`] order) for every hand class, class by class.
+/// (in `actions` order, the node's actions in the spot when it was locked)
+/// for every hand class, class by class.
 #[derive(Clone, Debug, PartialEq)]
 struct Lock {
     node: Node,
+    actions: &'static [Action],
     frequencies: Vec<f64>,
 }
 
@@ -77,6 +153,8 @@ pub enum SpotError {
         "the locked strategy of {hand} at {node} must give the node's actions frequencies between 0 and 1 that sum to 1"
     )]
     InvalidLock { node: Node, hand: HandClass },
+    #[error("a realization factor must be a non-negative number, got {0}")]
+    InvalidRealization(f64),
 }
 
 impl Spot {
@@ -89,10 +167,17 @@ impl Spot {
                 return Err(SpotError::InvalidStack { position, stack });
             }
         }
-        Ok(Spot {
-            stacks: [0.0, sb_stack, bb_stack],
+        Ok(Spot::push_fold([0.0, sb_stack, bb_stack]))
+    }
+
+    fn push_fold(stacks: [f64; 3]) -> Spot {
+        Spot {
+            stacks,
+            limp: false,
+            min_raise: false,
+            realization: RealizationFactors::default(),
             locks: Vec::new(),
-        })
+        }
     }
 
     /// 3-max push/fold: the BTN pushes or folds, then the SB, then the BB,
@@ -115,12 +200,57 @@ impl Spot {
             .collect::<Vec<_>>()[..]
         {
             [sb, bb] => Spot::heads_up(sb, bb),
-            [_, _, _] => Ok(Spot {
-                stacks,
-                locks: Vec::new(),
-            }),
+            [_, _, _] => Ok(Spot::push_fold(stacks)),
             _ => Err(SpotError::TooFewPlayers),
         }
+    }
+
+    /// Allows (or not) limping: putting in one big blind while nobody has
+    /// raised, then checking from the BB.
+    pub fn with_limp(mut self, allowed: bool) -> Spot {
+        self.limp = allowed;
+        self
+    }
+
+    /// Allows (or not) one min-raise per hand, to two big blinds, while
+    /// nobody has raised; it can be called, folded to or pushed over.
+    pub fn with_min_raise(mut self, allowed: bool) -> Spot {
+        self.min_raise = allowed;
+        self
+    }
+
+    /// Sets the realization factors of the equity model that values the
+    /// lines reaching the flop.
+    pub fn with_realization(mut self, factors: RealizationFactors) -> Result<Spot, SpotError> {
+        if let Some(&bad) = factors
+            .all()
+            .iter()
+            .find(|f| !(**f >= 0.0 && f.is_finite()))
+        {
+            return Err(SpotError::InvalidRealization(bad));
+        }
+        self.realization = factors;
+        Ok(self)
+    }
+
+    pub fn allows_limp(&self) -> bool {
+        self.limp
+    }
+
+    pub fn allows_min_raise(&self) -> bool {
+        self.min_raise
+    }
+
+    pub fn realization(&self) -> &RealizationFactors {
+        &self.realization
+    }
+
+    /// Whether some line can reach the flop: limps or min-raises are
+    /// allowed and no blind is all-in from the start. A blind all-in leaves
+    /// the others nothing to do but fold or go all-in, as in push/fold.
+    pub(crate) fn has_flop(&self) -> bool {
+        let all_in_blind = self.positions().iter().any(|&p| self.stack(p) <= p.blind());
+        (self.limp || self.min_raise) && !all_in_blind
     }
 
     /// The seats dealt in, in the order they act preflop.
@@ -131,10 +261,27 @@ impl Spot {
             .collect()
     }
 
-    /// Whether both spots seat the same stacks, whatever their locks: their
-    /// trees are then the same.
+    /// Whether both spots seat the same stacks, allow the same actions and
+    /// value the flop alike, whatever their locks: their trees and payoffs
+    /// are then the same.
     pub(crate) fn same_table(&self, other: &Spot) -> bool {
         self.stacks == other.stacks
+            && self.limp == other.limp
+            && self.min_raise == other.min_raise
+            && self.realization == other.realization
+    }
+
+    /// The actions of `node` in this spot's tree, or its push/fold actions
+    /// ([`Node::actions`]) if the node is not in the tree.
+    fn actions_at(&self, node: Node) -> &'static [Action] {
+        if !self.has_flop() {
+            return node.actions();
+        }
+        BettingTree::new(self)
+            .decisions
+            .iter()
+            .find(|d| d.node == node)
+            .map_or(node.actions(), |d| d.actions)
     }
 
     pub(crate) fn is_heads_up(&self) -> bool {
@@ -160,20 +307,20 @@ impl Spot {
     /// re-solves every other node around them. Locking a node again replaces
     /// its strategy; a node outside the spot's tree is never played, so its
     /// lock has no effect.
+    ///
+    /// The strategy may only use the node's actions in this spot: allow
+    /// limps and min-raises before locking the nodes they reach or open up.
     pub fn lock(
         mut self,
         node: Node,
         mut strategy: impl FnMut(HandClass) -> Strategy,
     ) -> Result<Spot, SpotError> {
-        let mut frequencies = Vec::with_capacity(NUM_CLASSES * node.actions().len());
+        let actions = self.actions_at(node);
+        let mut frequencies = Vec::with_capacity(NUM_CLASSES * actions.len());
         for hand in HandClass::all() {
             let strategy = strategy(hand);
-            let legal = strategy.iter().all(|(a, _)| node.actions().contains(&a));
-            let row: Vec<f64> = node
-                .actions()
-                .iter()
-                .map(|&a| strategy.frequency(a))
-                .collect();
+            let legal = strategy.iter().all(|(a, _)| actions.contains(&a));
+            let row: Vec<f64> = actions.iter().map(|&a| strategy.frequency(a)).collect();
             let in_range = row.iter().all(|f| (0.0..=1.0).contains(f));
             if !legal || !in_range || (row.iter().sum::<f64>() - 1.0).abs() > 1e-9 {
                 return Err(SpotError::InvalidLock { node, hand });
@@ -181,21 +328,46 @@ impl Spot {
             frequencies.extend(row);
         }
         self.locks.retain(|lock| lock.node != node);
-        self.locks.push(Lock { node, frequencies });
+        self.locks.push(Lock {
+            node,
+            actions,
+            frequencies,
+        });
         Ok(self)
     }
 
     /// Whether `node` is locked on a given strategy.
     pub fn is_locked(&self, node: Node) -> bool {
-        self.locked(node).is_some()
+        self.locks.iter().any(|lock| lock.node == node)
     }
 
-    /// The locked frequencies of `node`, laid out class by class, or `None`
-    /// if the node is free.
-    pub(crate) fn locked(&self, node: Node) -> Option<&[f64]> {
-        self.locks
-            .iter()
-            .find(|lock| lock.node == node)
-            .map(|lock| &lock.frequencies[..])
+    /// The locked frequencies of `node`, laid out class by class for the
+    /// node's `actions` in the solved tree, or `None` if the node is free.
+    ///
+    /// # Panics
+    /// If the lock plays an action the solved tree does not have at the
+    /// node: limps or min-raises were disallowed after locking it.
+    pub(crate) fn locked(&self, node: Node, actions: &[Action]) -> Option<Vec<f64>> {
+        let lock = self.locks.iter().find(|lock| lock.node == node)?;
+        if lock.actions == actions {
+            return Some(lock.frequencies.clone());
+        }
+        let width = lock.actions.len();
+        let mut frequencies = Vec::with_capacity(NUM_CLASSES * actions.len());
+        for row in lock.frequencies.chunks(width) {
+            for (&action, &f) in lock.actions.iter().zip(row) {
+                assert!(
+                    f == 0.0 || actions.contains(&action),
+                    "{node} is locked on {action}, which this spot does not allow there"
+                );
+            }
+            frequencies.extend(actions.iter().map(|a| {
+                lock.actions
+                    .iter()
+                    .position(|b| b == a)
+                    .map_or(0.0, |i| row[i])
+            }));
+        }
+        Some(frequencies)
     }
 }
