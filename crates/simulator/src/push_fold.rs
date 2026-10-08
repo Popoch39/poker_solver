@@ -20,7 +20,7 @@
 
 use nitro_solver::{Action, HandClass, Node, Spot};
 
-use crate::seat::{Card, Decision, PlayerView, Position, SeatView, Street};
+use crate::seat::{Decision, PlayerView, Position, SeatView, Street};
 
 /// What a seat's decision point is, for a push/fold strategy.
 #[derive(Clone, Debug, PartialEq)]
@@ -113,19 +113,8 @@ pub(crate) fn read(view: &SeatView) -> Reading {
     Reading::Tree(TreeDecision {
         spot,
         node,
-        hand: hand_class(view.hole_cards),
+        hand: HandClass::from_cards(view.hole_cards[0], view.hole_cards[1]),
         facing_all_in,
         can_go_all_in: view.legal_decisions().contains(&Decision::AllIn),
     })
-}
-
-fn hand_class([a, b]: [Card; 2]) -> HandClass {
-    let (high, low) = if a.value >= b.value { (a, b) } else { (b, a) };
-    let (high_rank, low_rank) = (high.value.to_char(), low.value.to_char());
-    let name = match () {
-        _ if high_rank == low_rank => format!("{high_rank}{low_rank}"),
-        _ if a.suit == b.suit => format!("{high_rank}{low_rank}s"),
-        _ => format!("{high_rank}{low_rank}o"),
-    };
-    name.parse().expect("two cards make a hand class")
 }

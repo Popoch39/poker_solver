@@ -30,8 +30,8 @@ impl NodeStats {
     pub(crate) fn record(&mut self, action: Action, cards: Option<[Card; 2]>) {
         let i = self.index(action).expect("a legal action");
         self.counts[i] += 1;
-        if let Some(cards) = cards {
-            self.known[i].add(class_of(cards));
+        if let Some([a, b]) = cards {
+            self.known[i].add(HandClass::from_cards(a, b));
         }
     }
 
@@ -151,18 +151,4 @@ impl KnownHands {
 pub(crate) fn grid_index(class: HandClass) -> usize {
     let (row, col) = class.grid_position();
     row * 13 + col
-}
-
-fn class_of(cards: [Card; 2]) -> HandClass {
-    let [a, b] = cards;
-    let (high, low) = if a.value >= b.value { (a, b) } else { (b, a) };
-    let (high, low) = (high.value.to_char(), low.value.to_char());
-    let name = if high == low {
-        format!("{high}{low}")
-    } else if a.suit == b.suit {
-        format!("{high}{low}s")
-    } else {
-        format!("{high}{low}o")
-    };
-    name.parse().expect("two cards make a hand class")
 }
