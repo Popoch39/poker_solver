@@ -20,9 +20,10 @@ use views::{Seat, on_flop, shares, view};
 
 use Position::{BigBlind, Button, SmallBlind};
 
-const FOLD: [f64; 3] = [1.0, 0.0, 0.0];
-const CALL: [f64; 3] = [0.0, 1.0, 0.0];
-const ALL_IN: [f64; 3] = [0.0, 0.0, 1.0];
+const FOLD: [f64; 4] = [1.0, 0.0, 0.0, 0.0];
+const CALL: [f64; 4] = [0.0, 1.0, 0.0, 0.0];
+const ALL_IN: [f64; 4] = [0.0, 0.0, 1.0, 0.0];
+const MIN_RAISE: [f64; 4] = [0.0, 0.0, 0.0, 1.0];
 
 fn bots(bot: TrivialBot) -> [Arc<dyn SeatStrategy>; 3] {
     [bot; 3].map(|b| Arc::new(b) as Arc<dyn SeatStrategy>)
@@ -78,11 +79,71 @@ fn a_population_bot_pushes_and_calls_as_the_population_does() {
 }
 
 #[test]
-fn a_population_bot_pushes_its_strongest_hands_first() {
-    // Random bots push half of the time they do not limp.
+fn a_population_bot_enters_with_its_strongest_hands_first() {
+    // Random bots fold, limp or push a third of the time each, first in:
+    // the strongest two thirds of the hands enter, limping or pushing.
     let bot = bot_of(bots(TrivialBot::Random));
-    assert_eq!(shares(&bot, &view(0, "Ah Ad", &BTN_OPEN)), ALL_IN);
+    let [fold, limp, push, min_raise] = shares(&bot, &view(0, "Ah Ad", &BTN_OPEN));
+    assert_eq!((fold, min_raise), (0.0, 0.0));
+    assert!(
+        (limp - 0.5).abs() < 0.05 && (push - 0.5).abs() < 0.05,
+        "{limp} {push}"
+    );
     assert_eq!(shares(&bot, &view(0, "7h 2c", &BTN_OPEN)), FOLD);
+}
+
+/// Plays `0` whenever it is legal, and calls otherwise.
+struct Always(Decision);
+
+impl SeatStrategy for Always {
+    fn name(&self) -> &str {
+        "always"
+    }
+
+    fn decide(&self, view: &SeatView, _: &mut dyn Rng) -> Decision {
+        if view.legal_decisions().contains(&self.0) {
+            self.0
+        } else {
+            Decision::Call
+        }
+    }
+}
+
+fn always(decision: Decision) -> [Arc<dyn SeatStrategy>; 3] {
+    [0; 3].map(|_| Arc::new(Always(decision)) as Arc<dyn SeatStrategy>)
+}
+
+#[test]
+fn a_population_bot_limps_and_min_raises_as_the_population_does() {
+    let limpers = bot_of(always(Decision::Call));
+    assert_eq!(shares(&limpers, &view(0, "7h 2c", &BTN_OPEN)), CALL);
+    assert_eq!(shares(&limpers, &view(0, "7h 2c", &HEADS_UP_SB_OPEN)), CALL);
+
+    let raisers = bot_of(always(Decision::MinRaise));
+    assert_eq!(shares(&raisers, &view(0, "7h 2c", &BTN_OPEN)), MIN_RAISE);
+    // Too short for a min-raise short of all-in, it pushes: played from
+    // the first hands only, where the population min-raised.
+    let raisers = PopulationBot::new(Arc::new(population_of(
+        Structure::expresso_nitro(),
+        always(Decision::MinRaise),
+        300,
+        true,
+    )));
+    let mut short = BTN_OPEN;
+    short[0].1 = 40.0;
+    assert_eq!(shares(&raisers, &view(0, "7h 2c", &short)), ALL_IN);
+}
+
+#[test]
+fn a_bot_that_limped_calls_whatever_comes_next() {
+    let limpers = bot_of(always(Decision::Call));
+    // The BTN limped, the SB pushed, the BB folded.
+    let pushed_over: [Seat; 3] = [
+        (Button, 280.0, 20.0, false, false),
+        (SmallBlind, 0.0, 300.0, false, true),
+        (BigBlind, 280.0, 20.0, true, false),
+    ];
+    assert_eq!(shares(&limpers, &view(0, "7h 2c", &pushed_over)), CALL);
 }
 
 /// Three-handed, folds on the button and moves all-in from the blinds;

@@ -5,15 +5,18 @@
 //! # Fallback policy (see ADR 0007)
 //!
 //! - **Postflop**, and **preflop once the player has put chips in
-//!   voluntarily** (it called a push and someone moved in over it): check
-//!   or call, to showdown. The push/fold tree values every call as a
-//!   showdown, so the hand is played out as the tree priced it.
+//!   voluntarily** (it limped or raised, or called a push, and someone
+//!   moved in or raised over it): check or call, to showdown. The push/fold
+//!   tree values every call as a showdown, so the hand is played out as the
+//!   tree priced it; and a limp or a raise then plays like the push it is
+//!   locked as.
 //! - **A limp or a raise short of all-in** counts as a push of the same
 //!   player: the player answers at the node facing that push, its call
 //!   becoming an all-in (an isolation) and its fold a check when there is
-//!   nothing to call. The solver now has limps and min-raises (ADR 0005),
-//!   but the population model has no node for them, neither to lock nor to
-//!   play from: the simulation stays on the push/fold tree.
+//!   nothing to call. The population bots limp and min-raise first in, but
+//!   the population model has nothing on the decisions that follow: the
+//!   hero and the bots stay on the push/fold tree, and the exploit is
+//!   locked on it with every limp and raise counted as a push.
 //! - **A node missing from the solved tree** (the player is all-in from the
 //!   blind, or the stacks rounding moved the blind's all-in) is a call: such
 //!   a player has nothing left to decide.
@@ -42,16 +45,18 @@ pub(crate) struct TreeDecision {
     /// a call, not an all-in of its own.
     facing_all_in: bool,
     can_go_all_in: bool,
+    can_min_raise: bool,
 }
 
 impl TreeDecision {
     /// The simulator's decision for an action of the tree.
     pub(crate) fn decision(&self, action: Action) -> Decision {
-        // The spots read here are push/fold; the simulator has no bet size
-        // short of all-in, so a min-raise could only be played as one.
         match action {
             Action::Fold => Decision::Fold,
             Action::Check | Action::Limp => Decision::Call,
+            Action::Raise if self.can_min_raise => Decision::MinRaise,
+            // Without chips behind a min-raise, it is the push, as in the
+            // solver's tree (ADR 0005).
             Action::Push | Action::Call | Action::Raise
                 if self.facing_all_in || !self.can_go_all_in =>
             {
@@ -110,11 +115,13 @@ pub(crate) fn read(view: &SeatView) -> Reading {
         .players
         .iter()
         .any(|p| p.seat != view.seat && p.all_in && voluntary(p));
+    let legal = view.legal_decisions();
     Reading::Tree(TreeDecision {
         spot,
         node,
         hand: HandClass::from_cards(view.hole_cards[0], view.hole_cards[1]),
         facing_all_in,
-        can_go_all_in: view.legal_decisions().contains(&Decision::AllIn),
+        can_go_all_in: legal.contains(&Decision::AllIn),
+        can_min_raise: legal.contains(&Decision::MinRaise),
     })
 }
