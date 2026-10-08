@@ -66,7 +66,7 @@ impl SeatStrategy for PopulationBot {
         let Some(stats) = self.stats(decision.node, &decision.spot) else {
             return Decision::Fold;
         };
-        let aggressive = *decision.node.actions().last().expect("a node has actions");
+        let aggressive = decision.node.aggressive_action();
         let frequency = stats.strategy(decision.hand).frequency(aggressive);
         let action = if rng.random::<f64>() < frequency {
             aggressive

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use nitro_hh::parse_path;
-use nitro_population::{Action, LeakOptions, LeakReport, Node};
+use nitro_population::{LeakOptions, LeakReport};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -59,7 +59,7 @@ fn print_report(report: &LeakReport, min_sample: u32) {
     println!("Fewer than {min_sample} decisions: inconclusive, listed after the others.");
     println!();
     for leak in report.leaks() {
-        let action = node_action(leak.node);
+        let action = leak.node.aggressive_action();
         let equilibrium = match leak.equilibrium_frequency {
             Some(frequency) => format!(
                 "{:.1}% at equilibrium ({} BB each)",
@@ -89,9 +89,4 @@ fn print_report(report: &LeakReport, min_sample: u32) {
             leak.sample,
         );
     }
-}
-
-/// The action frequencies are given for: push or call, the last one of a node.
-fn node_action(node: Node) -> Action {
-    *node.actions().last().expect("a node has actions")
 }

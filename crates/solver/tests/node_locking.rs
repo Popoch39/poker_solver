@@ -87,7 +87,7 @@ fn without_any_locked_node_the_solve_is_the_equilibrium() {
     let relocked = solve(&locked, &SolveOptions::default());
 
     for &node in equilibrium.nodes() {
-        let aggressive = *node.actions().last().unwrap();
+        let aggressive = node.aggressive_action();
         let share = |s: &nitro_solver::Solution| s.action_share(node, aggressive).unwrap();
         assert!(
             (share(&relocked) - share(&equilibrium)).abs() < 0.005,

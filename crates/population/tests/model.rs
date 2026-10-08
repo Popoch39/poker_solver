@@ -38,7 +38,7 @@ fn at_start(model: &PopulationModel, node: Node) -> (u32, u32) {
     let stats = model
         .get(node, StackBucket::of(15.0))
         .unwrap_or_else(|| panic!("{node} observed"));
-    let aggressive = *node.actions().last().unwrap();
+    let aggressive = node.aggressive_action();
     (stats.count(aggressive), stats.sample())
 }
 
@@ -82,7 +82,7 @@ fn heads_up_and_three_handed_decisions_are_also_kept_apart() {
     let bucket = StackBucket::of(15.0);
     let counts = |node: Node, table: TableSize| {
         let stats = model.get_at(node, bucket, table).unwrap();
-        (stats.count(*node.actions().last().unwrap()), stats.sample())
+        (stats.count(node.aggressive_action()), stats.sample())
     };
     // `get` pools both, as before.
     assert_eq!(at_start(&model, Node::SbOpen), (2, 3));

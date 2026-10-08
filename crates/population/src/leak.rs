@@ -113,7 +113,7 @@ impl LeakReport {
             for (node, bucket, stats) in model.entries() {
                 let tally = tallies.entry((node, bucket)).or_default();
                 tally.sample += stats.sample();
-                tally.aggressive += stats.count(aggressive(node));
+                tally.aggressive += stats.count(node.aggressive_action());
                 for (i, &action) in node.actions().iter().enumerate() {
                     let known = stats.known_hands(action);
                     for class in HandClass::all().filter(|&c| known.count(c) > 0) {
@@ -160,7 +160,7 @@ impl LeakReport {
             .into_iter()
             .map(|((node, bucket), tally)| {
                 let solution = &solutions[&bucket];
-                let equilibrium_frequency = solution.action_share(node, aggressive(node));
+                let equilibrium_frequency = solution.action_share(node, node.aggressive_action());
                 let chips_lost = equilibrium_frequency.map(|_| {
                     tally
                         .decisions
@@ -246,10 +246,6 @@ fn equilibrium_stack(bucket: StackBucket) -> f64 {
         Some(upper) => (bucket.lower().max(1.0) + upper) / 2.0,
         None => bucket.lower() + 5.0,
     }
-}
-
-fn aggressive(node: Node) -> nitro_solver::Action {
-    *node.actions().last().expect("a node has actions")
 }
 
 fn tree_order(node: Node) -> usize {

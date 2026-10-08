@@ -43,11 +43,6 @@ pub fn build(paths: &[PathBuf]) -> (PopulationModel, usize) {
     (PopulationModel::build(&hands, Players::Opponents), errors)
 }
 
-/// The action a range is shown for: push or call, the last one of a node.
-fn aggressive(node: Node) -> Action {
-    *node.actions().last().expect("a node has actions")
-}
-
 fn print_model(model: &PopulationModel, errors: usize) {
     let unplaced = model.hands() - model.hands_in_tree() - model.hands_off_tree();
     println!(
@@ -60,7 +55,7 @@ fn print_model(model: &PopulationModel, errors: usize) {
     println!("Decisions of every player but the account owner of the histories.");
     println!();
     for (node, bucket, stats) in model.entries() {
-        let action = aggressive(node);
+        let action = node.aggressive_action();
         println!(
             "{node}, {bucket}: {action} {:.1}% on {} ({} shown)",
             100.0 * stats.frequency(action),
@@ -93,7 +88,7 @@ const OFF_TREE_ACTIONS: [OffTreeAction; 4] = [
 ];
 
 fn print_ranges(model: &PopulationModel, node: Node) {
-    let action = aggressive(node);
+    let action = node.aggressive_action();
     for (_, bucket, stats) in model.entries().filter(|&(n, _, _)| n == node) {
         let shown = stats.known_hands(action).total();
         if shown == 0 {
