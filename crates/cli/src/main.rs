@@ -162,8 +162,8 @@ fn spot(args: &SolveArgs) -> Result<Spot, String> {
         three_way_btn,
     };
     spot.with_limp(args.limp)
-        .with_min_raise(args.min_raise)
-        .with_realization(factors)
+        .and_then(|spot| spot.with_min_raise(args.min_raise))
+        .and_then(|spot| spot.with_realization(factors))
         .map_err(|err| err.to_string())
 }
 

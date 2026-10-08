@@ -189,7 +189,8 @@ fn fifteen_big_blind_spot_with_limps_and_min_raises_is_solved_below_the_sampling
     let spot = Spot::three_max(15.0, 15.0, 15.0)
         .unwrap()
         .with_limp(true)
-        .with_min_raise(true);
+        .and_then(|spot| spot.with_min_raise(true))
+        .unwrap();
     let solution = solve(
         &spot,
         &SolveOptions {

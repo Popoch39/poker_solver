@@ -109,7 +109,7 @@ fn always_checks(_: HandClass) -> Strategy {
 
 #[test]
 fn nodes_of_a_limp_tree_lock_on_their_own_actions_and_keep_them() {
-    let spot = Spot::heads_up(12.0, 12.0).unwrap().with_limp(true);
+    let spot = Spot::heads_up(12.0, 12.0).unwrap().with_limp(true).unwrap();
     // The SB's open has a limp here, unlike in push/fold.
     let limper = |_: HandClass| Strategy::new([(Action::Limp, 0.5), (Action::Push, 0.5)]);
     assert!(spot.clone().lock(Node::SbOpen, limper).is_ok());
@@ -139,9 +139,40 @@ fn nodes_of_a_limp_tree_lock_on_their_own_actions_and_keep_them() {
 }
 
 #[test]
+fn an_action_a_locked_node_plays_cannot_be_disallowed_afterwards() {
+    let limper = |_: HandClass| Strategy::new([(Action::Limp, 0.5), (Action::Push, 0.5)]);
+    let raiser = |_: HandClass| Strategy::new([(Action::Raise, 0.5), (Action::Push, 0.5)]);
+    let spot = Spot::heads_up(12.0, 12.0)
+        .unwrap()
+        .with_limp(true)
+        .unwrap()
+        .with_min_raise(true)
+        .unwrap();
+
+    let limps = spot.clone().lock(Node::SbOpen, limper).unwrap();
+    assert_eq!(
+        limps.clone().with_limp(false),
+        Err(SpotError::LockedActionDisallowed {
+            node: Node::SbOpen,
+            action: Action::Limp
+        })
+    );
+    // The min-raise it never plays can go.
+    assert!(limps.with_min_raise(false).is_ok());
+    let raises = spot.lock(Node::SbOpen, raiser).unwrap();
+    assert_eq!(
+        raises.with_min_raise(false),
+        Err(SpotError::LockedActionDisallowed {
+            node: Node::SbOpen,
+            action: Action::Raise
+        })
+    );
+}
+
+#[test]
 fn against_a_bb_that_never_attacks_limps_the_sb_limps_more_and_wins_more() {
     // The SB acts again after a limp, so the gain must follow every line.
-    let spot = Spot::heads_up(12.0, 12.0).unwrap().with_limp(true);
+    let spot = Spot::heads_up(12.0, 12.0).unwrap().with_limp(true).unwrap();
     let bb_vs_limp: Node = "bb-vs-sb-limp".parse().unwrap();
     let options = SolveOptions {
         iterations: 2000,
