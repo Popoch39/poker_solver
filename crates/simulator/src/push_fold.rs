@@ -45,12 +45,17 @@ pub(crate) struct TreeDecision {
 impl TreeDecision {
     /// The simulator's decision for an action of the tree.
     pub(crate) fn decision(&self, action: Action) -> Decision {
+        // The spots read here are push/fold; the simulator has no bet size
+        // short of all-in, so a min-raise could only be played as one.
         match action {
             Action::Fold => Decision::Fold,
-            Action::Push | Action::Call if self.facing_all_in || !self.can_go_all_in => {
+            Action::Check | Action::Limp => Decision::Call,
+            Action::Push | Action::Call | Action::Raise
+                if self.facing_all_in || !self.can_go_all_in =>
+            {
                 Decision::Call
             }
-            Action::Push | Action::Call => Decision::AllIn,
+            Action::Push | Action::Call | Action::Raise => Decision::AllIn,
         }
     }
 }
