@@ -256,7 +256,7 @@ fn nearby_stacks_share_one_solve() {
 fn against_a_population_that_calls_too_often_the_hero_exploits_it() {
     let model = population_of(
         Structure::expresso_nitro(),
-        [0; 3].map(|_| Arc::new(Station) as Arc<dyn SeatStrategy>),
+        [0; 3].map(|_| Arc::new(Station { opens: 0.2 }) as Arc<dyn SeatStrategy>),
         500,
         false,
     );
@@ -283,7 +283,7 @@ fn the_hero_exploits_the_population_seen_at_the_very_stacks_of_the_spot() {
     // and nowhere deeper.
     let model = population_of(
         Structure::expresso_nitro(),
-        [0; 3].map(|_| Arc::new(Station) as Arc<dyn SeatStrategy>),
+        [0; 3].map(|_| Arc::new(Station { opens: 0.2 }) as Arc<dyn SeatStrategy>),
         500,
         true,
     );

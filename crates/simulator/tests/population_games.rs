@@ -13,7 +13,7 @@ use populations::{Station, config, population_of};
 fn three_population_bots_win_a_third_each() {
     let model = Arc::new(population_of(
         Structure::expresso_nitro(),
-        [0; 3].map(|_| Arc::new(Station) as Arc<dyn SeatStrategy>),
+        [0; 3].map(|_| Arc::new(Station { opens: 0.2 }) as Arc<dyn SeatStrategy>),
         300,
         false,
     ));

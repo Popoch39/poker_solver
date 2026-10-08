@@ -43,9 +43,11 @@ pub fn population_of(
     PopulationModel::build(&hands, Players::Opponents)
 }
 
-/// A calling station: opens all-in a fifth of the time whatever its cards,
+/// A calling station: opens all-in `opens` of the time whatever its cards,
 /// and calls every push.
-pub struct Station;
+pub struct Station {
+    pub opens: f64,
+}
 
 impl SeatStrategy for Station {
     fn name(&self) -> &str {
@@ -56,7 +58,7 @@ impl SeatStrategy for Station {
         let facing_all_in = view.players.iter().any(|p| p.all_in && p.seat != view.seat);
         match () {
             _ if facing_all_in => Decision::Call,
-            _ if rng.random_bool(0.2) => Decision::AllIn,
+            _ if rng.random_bool(self.opens) => Decision::AllIn,
             _ => Decision::Fold,
         }
     }

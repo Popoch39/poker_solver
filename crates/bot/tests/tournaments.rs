@@ -24,7 +24,7 @@ fn options() -> SolveOptions {
 }
 
 fn stations() -> Arc<PopulationModel> {
-    let stations = [0; 3].map(|_| Arc::new(Station) as Arc<dyn SeatStrategy>);
+    let stations = [0; 3].map(|_| Arc::new(Station { opens: 0.2 }) as Arc<dyn SeatStrategy>);
     Arc::new(population_of(
         Structure::expresso_nitro(),
         stations,
