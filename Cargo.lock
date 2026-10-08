@@ -1012,7 +1012,9 @@ name = "nitro-bot"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "nitro-hh",
  "nitro-local-client",
+ "nitro-population",
  "nitro-simulator",
  "nitro-solver",
  "rand",
