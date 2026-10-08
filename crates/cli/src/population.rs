@@ -4,9 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use nitro_hh::parse_paths;
-use nitro_population::{
-    Action, HandClass, Node, NodeStats, OffTreeAction, Players, PopulationModel, Position,
-};
+use nitro_population::{Node, OffTreeAction, Players, PopulationModel, Position};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -92,30 +90,9 @@ fn print_ranges(model: &PopulationModel, node: Node) {
         println!();
         println!("{node}, {bucket}: {action} range estimated from {shown} shown hands");
         println!("(% {action} per hand; pairs on the diagonal, suited above, offsuit below)");
-        print_grid(stats, action);
-    }
-}
-
-fn print_grid(stats: &NodeStats, action: Action) {
-    const RANKS: [char; 13] = [
-        'A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2',
-    ];
-    let header: String = RANKS.iter().map(|r| format!("{r:>4}")).collect();
-    println!("   {header}");
-    for (row, rank) in RANKS.iter().enumerate() {
-        let cells: String = (0..13)
-            .map(|col| {
-                let freq = stats
-                    .estimated_frequency(action, HandClass::at_grid(row, col))
-                    .unwrap_or(0.0);
-                let percent = (100.0 * freq).round();
-                if percent == 0.0 {
-                    format!("{:>4}", ".")
-                } else {
-                    format!("{percent:>4}")
-                }
-            })
-            .collect();
-        println!("  {rank}{cells}");
+        let grid = crate::grid(|hand| stats.estimated_frequency(action, hand).unwrap_or(0.0));
+        for line in grid {
+            println!("{line}");
+        }
     }
 }
