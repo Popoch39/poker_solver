@@ -117,15 +117,49 @@ pub fn compare(
         "strategies are compared on the same games"
     );
     let (ours, theirs) = (play_games(baseline), play_games(challenger));
+    comparison(baseline, challenger, &ours, &theirs, seat)
+}
+
+/// Plays the games of `config` directly, and again through `play`, and
+/// compares them at `seat`: `play` is handed each game's index and the seed
+/// that [`NitroGame::new`] deals it from, with `config`'s structure, and
+/// returns its places. A game played through a client, its hero seat
+/// answered from outside, is then the very game `simulate` plays.
+pub fn compare_with(
+    config: &SimulationConfig,
+    seat: usize,
+    play: impl Fn(u64, u64) -> [u8; 3] + Sync,
+) -> Comparison {
+    let ours = play_games(config);
+    let theirs: Vec<GameOutcome> = (0..config.games)
+        .into_par_iter()
+        .map(|index| {
+            let (multiplier, seed) = game_seed_and_multiplier(config, index);
+            GameOutcome {
+                multiplier,
+                places: play(index, seed),
+            }
+        })
+        .collect();
+    comparison(config, config, &ours, &theirs, seat)
+}
+
+fn comparison(
+    baseline: &SimulationConfig,
+    challenger: &SimulationConfig,
+    ours: &[GameOutcome],
+    theirs: &[GameOutcome],
+    seat: usize,
+) -> Comparison {
     let table = &baseline.prize_table;
-    let pairs = || ours.iter().zip(&theirs);
+    let pairs = || ours.iter().zip(theirs);
     let won = |game: &GameOutcome| f64::from(u8::from(game.places[seat] == 1));
     let net = |game: &GameOutcome| table.prize(game.multiplier, game.places[seat]) - 1.0;
     let (win_rate, win_rate_ci95) = mean_ci95(pairs().map(|(b, c)| won(c) - won(b)));
     let (roi, roi_ci95) = mean_ci95(pairs().map(|(b, c)| net(c) - net(b)));
     Comparison {
-        baseline: report(baseline, &ours),
-        challenger: report(challenger, &theirs),
+        baseline: report(baseline, ours),
+        challenger: report(challenger, theirs),
         gain: Gain {
             win_rate,
             win_rate_ci95,
@@ -219,10 +253,16 @@ fn play_game(config: &SimulationConfig, index: u64) -> GameOutcome {
 
 /// Game `index` of the simulation, and its multiplier.
 fn new_game(config: &SimulationConfig, index: u64) -> (u32, NitroGame) {
+    let (multiplier, seed) = game_seed_and_multiplier(config, index);
+    let game = NitroGame::new(config.structure.clone(), config.seats.clone(), seed);
+    (multiplier, game)
+}
+
+/// The multiplier of game `index` and the seed its game is dealt from.
+fn game_seed_and_multiplier(config: &SimulationConfig, index: u64) -> (u32, u64) {
     let mut rng = StdRng::seed_from_u64(game_seed(config.seed, index));
     let multiplier = config.prize_table.draw(&mut rng);
-    let game = NitroGame::new(config.structure.clone(), config.seats.clone(), rng.random());
-    (multiplier, game)
+    (multiplier, rng.random())
 }
 
 /// The hands of game `index` of the simulation, the very game [`simulate`]

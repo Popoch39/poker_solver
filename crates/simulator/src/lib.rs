@@ -20,8 +20,8 @@ pub use seat::{
     Suit, TrivialBot, Value,
 };
 pub use simulation::{
-    Comparison, Gain, Report, SeatReport, SimulationConfig, Verdict, compare, hand_histories,
-    simulate,
+    Comparison, Gain, Report, SeatReport, SimulationConfig, Verdict, compare, compare_with,
+    hand_histories, simulate,
 };
 pub use solver_hero::SolverHero;
 pub use structure::{BlindLevel, NITRO_BLIND_LEVELS, Structure};

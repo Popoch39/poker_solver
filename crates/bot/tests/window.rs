@@ -4,8 +4,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 
 use nitro_bot::{
-    CaptureError, ClientWindow, Grabber, TargetError, Window, WindowList, capture_client,
-    find_client_window, parse_hyprctl_clients,
+    ActiveWindow, CaptureError, ClientWindow, Grabber, TargetError, Window, WindowList,
+    capture_client, find_client_window, parse_hyprctl_activewindow, parse_hyprctl_clients,
 };
 use nitro_local_client::{APP_ID, Frame, TITLE, card_back};
 
@@ -164,6 +164,37 @@ fn drops_a_capture_if_the_client_window_changed_meanwhile() {
     let grabber = FakeGrabber::default();
     let result = capture_client(&Windows::new([before, after]), &grabber);
     assert_eq!(result, Err(CaptureError::WindowChanged));
+}
+
+#[test]
+fn parses_hyprctls_focused_window_and_where_it_is() {
+    // `hyprctl activewindow -j` prints one window of `hyprctl clients -j`.
+    let json = r#"{
+        "address": "0x63a6c1f0", "mapped": true, "hidden": false,
+        "at": [-1880, 80], "size": [960, 640], "workspace": {"id": 2, "name": "2"},
+        "floating": true, "monitor": 1, "class": "nitro-local-client",
+        "title": "Nitro local client", "pid": 4242, "focusHistoryID": 0,
+        "stableId": "18000008"
+    }"#;
+    assert_eq!(
+        parse_hyprctl_activewindow(json).unwrap(),
+        Some(ActiveWindow {
+            window: Window {
+                address: "0x63a6c1f0".to_owned(),
+                title: TITLE.to_owned(),
+                class: APP_ID.to_owned(),
+                stable_id: Some("18000008".to_owned()),
+            },
+            at: (-1880, 80),
+            size: (960, 640),
+        })
+    );
+}
+
+#[test]
+fn no_focused_window_is_an_empty_object_to_hyprctl() {
+    assert_eq!(parse_hyprctl_activewindow("{}\n").unwrap(), None);
+    assert!(parse_hyprctl_activewindow("Invalid").is_err());
 }
 
 #[test]

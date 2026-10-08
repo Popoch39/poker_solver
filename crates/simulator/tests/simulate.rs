@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use nitro_simulator::{
-    PrizeTable, Report, SeatStrategy, SimulationConfig, Structure, TrivialBot, Verdict, compare,
-    simulate,
+    NitroGame, PrizeTable, Report, SeatStrategy, SimulationConfig, Structure, TrivialBot, Verdict,
+    compare, compare_with, simulate,
 };
 
 fn config(bots: [TrivialBot; 3], games: u64, seed: u64) -> SimulationConfig {
@@ -118,6 +118,30 @@ fn two_strategies_compared_on_the_same_games_differ_by_their_paired_gain() {
 
     let same = compare(&baseline, &baseline, 0).gain;
     assert_eq!((same.win_rate, same.win_rate_ci95), (0.0, (0.0, 0.0)));
+}
+
+#[test]
+fn games_played_elsewhere_are_the_same_games_as_the_simulators() {
+    use TrivialBot::*;
+    let baseline = config([Random, AlwaysAllIn, AlwaysAllIn], 500, 12);
+    let challenger = config([AlwaysAllIn; 3], 500, 12);
+    // A client would play game `index` from `seed`, its hero seat answered
+    // from outside; here the challenger's strategies play it.
+    let played = compare_with(&baseline, 0, |_index, seed| {
+        NitroGame::new(challenger.structure.clone(), challenger.seats.clone(), seed).play_to_end()
+    });
+
+    let direct = compare(&baseline, &challenger, 0);
+    assert_eq!(played.baseline, direct.baseline);
+    assert_eq!(played.gain, direct.gain);
+    for (played, direct) in played.challenger.seats.iter().zip(&direct.challenger.seats) {
+        assert_eq!((played.wins, played.roi), (direct.wins, direct.roi));
+    }
+    let same = compare_with(&baseline, 0, |_, seed| {
+        NitroGame::new(baseline.structure.clone(), baseline.seats.clone(), seed).play_to_end()
+    });
+    assert_eq!(same.challenger, simulate(&baseline));
+    assert_eq!(same.gain.win_rate_ci95, (0.0, 0.0));
 }
 
 #[test]

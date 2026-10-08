@@ -93,6 +93,32 @@ fn a_fold_leaves_the_hand_and_shows_the_winner() {
 }
 
 #[test]
+fn the_hero_s_pending_decision_is_the_simulator_s_own_view_of_it() {
+    let mut seed = 6;
+    let mut client = client(seed, [TrivialBot::Random; 2]);
+    let mut asked = 0;
+    while asked < 50 {
+        let table = client.view();
+        if table.to_act != Some(HERO) {
+            assert_eq!(client.hero_decision(), None, "{table:?}");
+            if client.advance() == Next::GameOver {
+                seed += 1;
+                client = self::client(seed, [TrivialBot::Random; 2]);
+            }
+            continue;
+        }
+        let pending = client.hero_decision().expect("the hero is asked");
+        assert_eq!(pending.seat, HERO);
+        assert_eq!(Some(pending.hole_cards), table.seats[HERO].hole_cards);
+        assert_eq!(pending.to_call, table.to_call);
+        assert_eq!(pending.legal_decisions(), table.legal);
+        let (x, y) = LAYOUT.call.center();
+        client.click(x, y).unwrap();
+        asked += 1;
+    }
+}
+
+#[test]
 fn clicks_elsewhere_or_on_an_illegal_button_do_nothing() {
     let mut client = client(4, [TrivialBot::AlwaysFold; 2]);
     // Before the hero is asked, no button does anything.

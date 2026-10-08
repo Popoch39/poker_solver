@@ -10,6 +10,8 @@ use std::process::Command;
 use nitro_local_client::{APP_ID, TITLE};
 use serde::Deserialize;
 
+use crate::inject::{InjectError, ScreenArea, parse_hyprctl_monitors};
+
 /// A window as the compositor lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Window {
@@ -33,15 +35,7 @@ pub struct Hyprctl;
 
 impl WindowList for Hyprctl {
     fn windows(&self) -> Result<Vec<Window>, TargetError> {
-        let output = Command::new("hyprctl")
-            .args(["clients", "-j"])
-            .output()
-            .map_err(|e| TargetError::List(format!("cannot run hyprctl: {e}")))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(TargetError::List(format!("hyprctl failed: {stderr}")));
-        }
-        let json = String::from_utf8_lossy(&output.stdout);
+        let json = hyprctl(&["clients", "-j"])?;
         parse_hyprctl_clients(&json).map_err(|e| TargetError::List(e.to_string()))
     }
 }
@@ -49,6 +43,62 @@ impl WindowList for Hyprctl {
 /// The windows of `hyprctl clients -j`.
 pub fn parse_hyprctl_clients(json: &str) -> Result<Vec<Window>, serde_json::Error> {
     serde_json::from_str(json)
+}
+
+/// The window with the keyboard focus, and where it lies on the screen.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ActiveWindow {
+    #[serde(flatten)]
+    pub window: Window,
+    /// Top-left corner of its contents, in the compositor's layout
+    /// coordinates (logical pixels, across all monitors).
+    pub at: (i32, i32),
+    /// Size of its contents, in logical pixels.
+    pub size: (u32, u32),
+}
+
+/// Which window has the focus: the only one a click may land in.
+pub trait Focus {
+    fn active_window(&self) -> Result<Option<ActiveWindow>, TargetError>;
+}
+
+/// Hyprland's focused window, from `hyprctl activewindow -j`.
+impl Focus for Hyprctl {
+    fn active_window(&self) -> Result<Option<ActiveWindow>, TargetError> {
+        let json = hyprctl(&["activewindow", "-j"])?;
+        parse_hyprctl_activewindow(&json).map_err(|e| TargetError::List(e.to_string()))
+    }
+}
+
+/// The window of `hyprctl activewindow -j`: `None` when no window has the
+/// focus, which Hyprland prints as an empty object.
+pub fn parse_hyprctl_activewindow(json: &str) -> Result<Option<ActiveWindow>, serde_json::Error> {
+    let value: serde_json::Value = serde_json::from_str(json)?;
+    if value.as_object().is_some_and(|o| o.is_empty()) {
+        return Ok(None);
+    }
+    serde_json::from_value(value).map(Some)
+}
+
+impl Hyprctl {
+    /// Every monitor, from `hyprctl monitors -j`.
+    pub fn screen_area(&self) -> Result<ScreenArea, InjectError> {
+        let json = hyprctl(&["monitors", "-j"]).map_err(|e| InjectError(e.to_string()))?;
+        parse_hyprctl_monitors(&json)
+    }
+}
+
+/// The standard output of `hyprctl args…`.
+fn hyprctl(args: &[&str]) -> Result<String, TargetError> {
+    let output = Command::new("hyprctl")
+        .args(args)
+        .output()
+        .map_err(|e| TargetError::List(format!("cannot run hyprctl: {e}")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(TargetError::List(format!("hyprctl failed: {stderr}")));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Why no window may be captured.
