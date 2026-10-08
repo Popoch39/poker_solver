@@ -36,17 +36,23 @@
 //! ```
 
 mod capture;
+mod clicker;
+mod inject;
 mod measure;
 mod read;
 mod state;
+mod stop;
 mod text;
 mod window;
 
 pub use capture::{CaptureError, Grabber, Grim, capture_client};
+pub use clicker::{BotError, ClickerBot, Turn};
+pub use inject::{InjectError, Injector, ScreenPoint};
 pub use measure::{MeasureConfig, Measurement, Misread, measure};
 pub use read::{ReadError, TableReader};
 pub use state::{Cards, SeatState, TableState};
+pub use stop::EmergencyStop;
 pub use window::{
-    ClientWindow, Hyprctl, TargetError, Window, WindowList, find_client_window,
-    parse_hyprctl_clients,
+    ActiveWindow, ClientWindow, Focus, Hyprctl, TargetError, Window, WindowList,
+    find_client_window, parse_hyprctl_activewindow, parse_hyprctl_clients,
 };

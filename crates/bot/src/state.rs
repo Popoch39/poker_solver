@@ -1,7 +1,7 @@
 //! What the bot reads off the table.
 
 use nitro_local_client::{HERO, chips};
-use nitro_simulator::{Card, Decision, Position, TableView};
+use nitro_simulator::{Card, Decision, PlayerView, Position, SeatView, Street, TableView};
 
 /// `amount` at the precision the client writes it.
 fn displayed(amount: f32) -> f32 {
@@ -103,6 +103,49 @@ impl TableState {
             },
             seats,
         }
+    }
+
+    /// What a seat strategy decides from, while the hero is to act: the
+    /// view the simulator hands its own seats, rebuilt from the table.
+    pub fn seat_view(&self) -> Option<SeatView> {
+        if self.to_act != Some(HERO) {
+            return None;
+        }
+        let players = self
+            .seats
+            .iter()
+            .enumerate()
+            .filter_map(|(seat, s)| {
+                Some(PlayerView {
+                    seat,
+                    position: s.position?,
+                    stack: s.stack,
+                    street_bet: s.street_bet,
+                    // Dealt in, but no cards left in front of it.
+                    folded: s.cards == Cards::None,
+                    all_in: s.all_in,
+                })
+            })
+            .collect();
+        Some(SeatView {
+            hand_number: self.hand_number,
+            level: self.level,
+            small_blind: self.small_blind,
+            big_blind: self.big_blind,
+            seat: HERO,
+            position: self.hero_position()?,
+            hole_cards: self.hero_cards()?,
+            street: match self.board.len() {
+                0 => Street::Preflop,
+                3 => Street::Flop,
+                4 => Street::Turn,
+                _ => Street::River,
+            },
+            board: self.board.clone(),
+            pot: self.pot,
+            to_call: self.to_call,
+            players,
+        })
     }
 
     pub fn hero_cards(&self) -> Option<[Card; 2]> {
