@@ -38,22 +38,26 @@
 mod capture;
 mod clicker;
 mod inject;
+mod live;
 mod measure;
 mod offscreen;
 mod read;
 mod state;
 mod stop;
 mod text;
+mod uinput;
 mod window;
 
 pub use capture::{CaptureError, Grabber, Grim, capture_client};
 pub use clicker::{BotError, ClickerBot, Turn};
-pub use inject::{InjectError, Injector, ScreenPoint};
+pub use inject::{InjectError, Injector, ScreenArea, ScreenPoint, parse_hyprctl_monitors};
+pub use live::{LiveError, Pace, play_live};
 pub use measure::{MeasureConfig, Measurement, Misread, measure};
 pub use offscreen::{Discordance, OffscreenReport, play_offscreen};
 pub use read::{ReadError, TableReader};
 pub use state::{Cards, SeatState, TableState};
 pub use stop::EmergencyStop;
+pub use uinput::Uinput;
 pub use window::{
     ActiveWindow, ClientWindow, Focus, Hyprctl, TargetError, Window, WindowList,
     find_client_window, parse_hyprctl_activewindow, parse_hyprctl_clients,

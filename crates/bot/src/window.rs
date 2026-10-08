@@ -10,6 +10,8 @@ use std::process::Command;
 use nitro_local_client::{APP_ID, TITLE};
 use serde::Deserialize;
 
+use crate::inject::{InjectError, ScreenArea, parse_hyprctl_monitors};
+
 /// A window as the compositor lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Window {
@@ -76,6 +78,14 @@ pub fn parse_hyprctl_activewindow(json: &str) -> Result<Option<ActiveWindow>, se
         return Ok(None);
     }
     serde_json::from_value(value).map(Some)
+}
+
+impl Hyprctl {
+    /// Every monitor, from `hyprctl monitors -j`.
+    pub fn screen_area(&self) -> Result<ScreenArea, InjectError> {
+        let json = hyprctl(&["monitors", "-j"]).map_err(|e| InjectError(e.to_string()))?;
+        parse_hyprctl_monitors(&json)
+    }
 }
 
 /// The standard output of `hyprctl args…`.

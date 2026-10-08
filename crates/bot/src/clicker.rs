@@ -105,6 +105,11 @@ impl ClickerBot {
         Ok(Turn::Clicked(button))
     }
 
+    /// The emergency stop is raised: no turn will click any more.
+    pub fn is_stopped(&self) -> bool {
+        self.stop.is_triggered()
+    }
+
     /// Where `button` is on the screen, provided the local client has the
     /// focus.
     fn aim(&self, button: Decision) -> Result<ScreenPoint, BotError> {

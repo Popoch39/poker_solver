@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+evdev.workspace = true
 nitro-hh.workspace = true
 nitro-local-client.workspace = true
 nitro-population.workspace = true
