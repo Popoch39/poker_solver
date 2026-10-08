@@ -40,6 +40,8 @@ Le client local rend ses images hors écran, le bot les lit, décide et « cliqu
 
 ## Conséquences
 
-- La concordance mesurée est de 100 % : le lecteur ne fait pas d'erreur sur les images du client. Le taux de victoire du bot reste dans l'intervalle de confiance du héros simulé (voir le test lent `tournaments`).
+- La concordance mesurée est de 100 % : le lecteur ne fait pas d'erreur sur les images du client. Le taux de victoire du bot reste dans l'intervalle de confiance du héros simulé (voir le test lent `tournaments`). Contre la population NitroVariance, sur 1 000 parties (`offscreen --seed 7`) :
+  - équilibre : 8 979 décisions concordantes sur 8 979, bot 31,9 % contre 31,5 % simulé, écart apparié +0,4 pt [−0,6 ; +1,4] ;
+  - exploitation : 9 300 sur 9 300, bot 34,6 % contre 34,5 %, écart +0,1 pt [−0,3 ; +0,5].
 - Les tirages aléatoires du bot ne sont pas ceux du simulateur, qui les tire du générateur du siège. Une stratégie mixte fait donc diverger les deux parties dès son premier tirage différent, et l'écart apparié n'est plus nul.
 - Le chemin réel (`hyprctl`, `grim`, uinput) n'a pas été essayé en vrai : aucun test n'injecte d'entrée ni ne capture l'écran.
