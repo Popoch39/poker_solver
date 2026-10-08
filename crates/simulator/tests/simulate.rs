@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use nitro_simulator::{
-    PrizeTable, Report, SeatStrategy, SimulationConfig, Structure, TrivialBot, simulate,
+    PrizeTable, Report, SeatStrategy, SimulationConfig, Structure, TrivialBot, Verdict, compare,
+    simulate,
 };
 
 fn config(bots: [TrivialBot; 3], games: u64, seed: u64) -> SimulationConfig {
@@ -60,6 +61,70 @@ fn the_report_compares_the_win_rate_to_the_break_even() {
         let (low, high) = seat.roi_ci95;
         assert!(low < seat.roi && seat.roi < high, "{seat:?}");
     }
+}
+
+#[test]
+fn a_seat_is_above_or_below_the_break_even_only_when_its_interval_says_so() {
+    use TrivialBot::*;
+    let report = simulate(&config([AlwaysAllIn, AlwaysFold, Random], 500, 8));
+    assert_eq!(report.seats[0].verdict, Verdict::AboveBreakEven);
+    assert_eq!(report.seats[1].verdict, Verdict::BelowBreakEven);
+    let even = simulate(&config([Random; 3], 300, 9));
+    let undecided = even
+        .seats
+        .iter()
+        .filter(|s| s.verdict == Verdict::Undecided)
+        .count();
+    assert!(undecided >= 1, "{even:?}");
+    for seat in &even.seats {
+        let (low, high) = seat.win_rate_ci95;
+        let expected = match () {
+            _ if low > even.break_even_win_rate => Verdict::AboveBreakEven,
+            _ if high < even.break_even_win_rate => Verdict::BelowBreakEven,
+            _ => Verdict::Undecided,
+        };
+        assert_eq!(seat.verdict, expected, "{seat:?}");
+    }
+}
+
+#[test]
+fn two_strategies_compared_on_the_same_games_differ_by_their_paired_gain() {
+    use TrivialBot::*;
+    let baseline = config([Random, AlwaysAllIn, AlwaysAllIn], 2_000, 10);
+    let challenger = config([AlwaysAllIn; 3], 2_000, 10);
+
+    let comparison = compare(&baseline, &challenger, 0);
+
+    assert_eq!(comparison.baseline, simulate(&baseline));
+    assert_eq!(comparison.challenger, simulate(&challenger));
+    let (seat, base) = (
+        &comparison.challenger.seats[0],
+        &comparison.baseline.seats[0],
+    );
+    let gain = comparison.gain;
+    assert!((gain.win_rate - (seat.win_rate - base.win_rate)).abs() < 1e-12);
+    assert!((gain.roi - (seat.roi - base.roi)).abs() < 1e-12);
+    for (value, (low, high)) in [
+        (gain.win_rate, gain.win_rate_ci95),
+        (gain.roi, gain.roi_ci95),
+    ] {
+        assert!(low < value && value < high, "{gain:?}");
+    }
+    // The same deals until the play differs: pairing the games narrows the
+    // interval of independent samples, whose half-widths add in quadrature.
+    let half = |(low, high): (f64, f64)| (high - low) / 2.0;
+    let independent = half(seat.roi_ci95).hypot(half(base.roi_ci95));
+    assert!(half(gain.roi_ci95) < independent, "{gain:?}");
+
+    let same = compare(&baseline, &baseline, 0).gain;
+    assert_eq!((same.win_rate, same.win_rate_ci95), (0.0, (0.0, 0.0)));
+}
+
+#[test]
+#[should_panic(expected = "the same games")]
+fn strategies_are_only_compared_on_the_same_games() {
+    let baseline = config([TrivialBot::Random; 3], 100, 1);
+    compare(&baseline, &config([TrivialBot::Random; 3], 100, 2), 0);
 }
 
 #[test]

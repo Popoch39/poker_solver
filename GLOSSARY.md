@@ -94,6 +94,14 @@ _Éviter_ : adversaire virtuel, IA
 Fixation de certains nœuds sur des fréquences données (celles de la population) avant de re-résoudre le reste du spot, pour obtenir une stratégie d'exploitation.
 _Éviter_ : verrouillage (seul), lock
 
+**Stratégie d'exploitation** :
+Stratégie du héros obtenue par node-locking : la meilleure réponse aux nœuds verrouillés sur la population, les autres nœuds restant à l'équilibre.
+_Éviter_ : stratégie exploitante, exploit (en prose)
+
+**Politique de repli** :
+Règle de jeu d'une stratégie push/fold (héros ou bot-population) dans un spot que l'arbre ne couvre pas : postflop, limp, relance qui n'est pas un tapis (voir ADR 0007).
+_Éviter_ : fallback (en prose), défaut
+
 ## Client local
 
 **Client local** :

@@ -135,6 +135,31 @@ fn heads_up_the_button_posts_the_small_blind_and_acts_first() {
 }
 
 #[test]
+fn split_pots_leave_whole_chips() {
+    let mut shared = 0;
+    // A tie for an odd pot is rare: it takes thousands of games to meet one.
+    for seed in 0..5_000 {
+        let mut game = NitroGame::new(
+            Structure::expresso_nitro(),
+            seats([TrivialBot::Random; 3]),
+            seed,
+        );
+        while let Some(hand) = game.play_hand() {
+            let view = game.table_view(0);
+            shared += usize::from(view.seats.iter().filter(|s| s.won > 0.0).count() > 1);
+            for seat in view.seats {
+                assert_eq!(seat.won.fract(), 0.0, "seed {seed}: {view:?}");
+            }
+            for stack in hand.stacks {
+                assert_eq!(stack.fract(), 0.0, "seed {seed}: {hand:?}");
+            }
+            assert_eq!(hand.stacks.iter().sum::<f32>(), 900.0);
+        }
+    }
+    assert!(shared > 100, "only {shared} pots shared");
+}
+
+#[test]
 fn the_game_ends_when_one_seat_has_all_the_chips() {
     let mut game = NitroGame::new(
         Structure::expresso_nitro(),

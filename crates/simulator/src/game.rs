@@ -24,6 +24,7 @@ use rs_poker::arena::{
 };
 use rs_poker::core::Card;
 
+use crate::history::{self, HandLog, LogHistorian, PlayedHand};
 use crate::seat::{Decision, PlayerView, Position, SeatStrategy, SeatView, Street};
 use crate::structure::Structure;
 use crate::table::{TableSeat, TableView};
@@ -129,6 +130,7 @@ struct Hand {
     /// The random source of each arena index's strategy.
     rngs: Vec<StdRng>,
     exchange: Arc<Mutex<Exchange>>,
+    log: HandLog,
     /// `None` once the hand is over.
     run: Option<HandRun>,
     /// The arena state at the pending decision, or at the end of the hand.
@@ -286,6 +288,41 @@ impl NitroGame {
         }
     }
 
+    /// The last finished hand as a hand history, written down by `hero` (the
+    /// table seat whose cards are dealt face up, if any): seats are numbered
+    /// from 1, and only the cards shown down are known of the others.
+    /// `None` before the first hand is over.
+    pub fn hand_history(&self, hero: Option<usize>) -> Option<nitro_hh::Hand> {
+        let hand = self.hand.as_ref().filter(|h| h.run.is_none())?;
+        let state = &hand.state;
+        let in_hand = |i: usize| state.player_active.get(i) || state.player_all_in.get(i);
+        let log = lock_log(&hand.log);
+        Some(history::write(
+            &PlayedHand {
+                number: hand.number,
+                level: hand.level,
+                button: hand.button,
+                table: &hand.table,
+                names: hand
+                    .table
+                    .iter()
+                    .map(|&seat| match &self.seats[seat] {
+                        Seat::Strategy(strategy) => format!("{} {}", strategy.name(), seat + 1),
+                        Seat::External => format!("external {}", seat + 1),
+                    })
+                    .collect(),
+                starting_stacks: &hand.starting_stacks,
+                state,
+                hole_cards: (0..hand.table.len())
+                    .map(|i| hole_cards(state, i))
+                    .collect(),
+                shown_down: (0..hand.table.len()).filter(|&i| in_hand(i)).count() >= 2,
+                log: &log,
+            },
+            hero,
+        ))
+    }
+
     /// Moves the game on by one event: deals a hand, lets a strategy seat
     /// act, reports a finished hand, or reports that an external seat must
     /// act (without moving).
@@ -401,9 +438,11 @@ impl NitroGame {
                 }) as Box<dyn Agent>
             })
             .collect();
+        let log = HandLog::default();
         let mut sim = HoldemSimulationBuilder::default()
             .game_state(state.clone())
             .agents(agents)
+            .historians(vec![Box::new(LogHistorian(Arc::clone(&log)))])
             .build_with_rng(StdRng::from_rng(&mut self.rng))
             .expect("the table has a game state and one agent per seat");
         self.hand = Some(Hand {
@@ -414,6 +453,7 @@ impl NitroGame {
             starting_stacks,
             rngs,
             exchange,
+            log,
             run: Some(Box::pin(async move {
                 sim.run().await;
                 sim
@@ -463,6 +503,7 @@ impl NitroGame {
 
     fn finish_hand(&mut self) {
         let hand = self.hand.as_mut().expect("a hand was played");
+        settle_odd_chips(&mut hand.state);
         let alive = &hand.table;
         for (i, &seat) in alive.iter().enumerate() {
             self.stacks[seat] = hand.state.stacks[i];
@@ -514,10 +555,36 @@ impl NitroGame {
     }
 }
 
+/// Rounds a finished hand's winnings to whole chips: the arena splits a tied
+/// pot evenly, halves and thirds of chips included, where a real table
+/// gives each winner whole chips and the odd ones, one each, to the winners
+/// first clockwise from the button. Hand histories need whole chips too.
+fn settle_odd_chips(state: &mut GameState) {
+    // f32 thirds of a pot are off by a few ulps.
+    const EPSILON: f32 = 1e-3;
+    let n = state.num_players;
+    let won: Vec<f32> = (0..n).map(|i| state.player_winnings[i]).collect();
+    let whole: Vec<f32> = won.iter().map(|w| (w + EPSILON).floor()).collect();
+    let mut odd_chips = (won.iter().sum::<f32>() - whole.iter().sum::<f32>()).round();
+    for i in (1..=n).map(|k| (state.dealer_idx + k) % n) {
+        let mut settled = whole[i];
+        if odd_chips > 0.0 && won[i] - whole[i] > EPSILON {
+            settled += 1.0;
+            odd_chips -= 1.0;
+        }
+        state.stacks[i] += settled - won[i];
+        state.player_winnings[i] = settled;
+    }
+}
+
 fn lock(exchange: &Mutex<Exchange>) -> MutexGuard<'_, Exchange> {
     exchange
         .lock()
         .expect("no thread panics while holding the exchange")
+}
+
+fn lock_log(log: &HandLog) -> MutexGuard<'_, Vec<rs_poker::arena::action::Action>> {
+    log.lock().expect("no thread panics while holding the log")
 }
 
 /// An arena seat that leaves its question in the exchange and suspends the

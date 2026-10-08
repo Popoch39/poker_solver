@@ -34,7 +34,7 @@ pub struct Args {
     hands_per_level_heads_up: u32,
 }
 
-fn parse_buy_in(euros: &str) -> Result<&'static PrizeTable, String> {
+pub fn parse_buy_in(euros: &str) -> Result<&'static PrizeTable, String> {
     let cents = euros
         .replace(',', ".")
         .parse::<f64>()
@@ -55,7 +55,7 @@ fn parse_buy_in(euros: &str) -> Result<&'static PrizeTable, String> {
         })
 }
 
-fn euros_label(cents: u32) -> String {
+pub fn euros_label(cents: u32) -> String {
     if cents.is_multiple_of(100) {
         format!("{}", cents / 100)
     } else {

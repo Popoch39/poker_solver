@@ -5,8 +5,9 @@ mod support;
 use nitro_hh::Street;
 use nitro_population::{
     Action, HandClass, Node, OffTreeAction, Players, PopulationModel, Position, StackBucket,
+    TableSize,
 };
-use nitro_solver::Spot;
+use nitro_solver::{SolveOptions, Spot, solve};
 use support::{BB, BTN, HandBuilder, SB};
 
 /// 15 BB each, the starting stacks of an Expresso Nitro.
@@ -65,6 +66,48 @@ fn each_decision_is_placed_at_its_push_fold_node() {
     assert_eq!(at_start(&model, Node::BbVsBtnPush), (1, 1));
     assert_eq!(at_start(&model, Node::SbOpen), (3, 3));
     assert_eq!(at_start(&model, Node::BbVsSbPush), (1, 3));
+}
+
+#[test]
+fn heads_up_and_three_handed_decisions_are_also_kept_apart() {
+    let hands = [
+        HandBuilder::three_handed(START).fold(BTN).push(SB).fold(BB),
+        HandBuilder::heads_up(300, 300).push(SB).call(BB),
+        HandBuilder::heads_up(300, 300).fold(SB),
+    ]
+    .map(HandBuilder::build);
+
+    let model = PopulationModel::build(&hands, Players::Opponents);
+
+    let bucket = StackBucket::of(15.0);
+    let counts = |node: Node, table: TableSize| {
+        let stats = model.get_at(node, bucket, table).unwrap();
+        (stats.count(*node.actions().last().unwrap()), stats.sample())
+    };
+    // `get` pools both, as before.
+    assert_eq!(at_start(&model, Node::SbOpen), (2, 3));
+    assert_eq!(counts(Node::SbOpen, TableSize::ThreeMax), (1, 1));
+    assert_eq!(counts(Node::SbOpen, TableSize::HeadsUp), (1, 2));
+    assert_eq!(counts(Node::BbVsSbPush, TableSize::ThreeMax), (0, 1));
+    assert_eq!(counts(Node::BbVsSbPush, TableSize::HeadsUp), (1, 1));
+    assert_eq!(counts(Node::BtnOpen, TableSize::ThreeMax), (0, 1));
+    assert!(
+        model
+            .get_at(Node::BtnOpen, bucket, TableSize::HeadsUp)
+            .is_none()
+    );
+    assert_eq!(
+        TableSize::of(&Spot::heads_up(10.0, 10.0).unwrap()),
+        TableSize::HeadsUp
+    );
+    assert_eq!(
+        TableSize::of(&Spot::three_max(0.0, 10.0, 10.0).unwrap()),
+        TableSize::HeadsUp
+    );
+    assert_eq!(
+        TableSize::of(&Spot::three_max(5.0, 10.0, 10.0).unwrap()),
+        TableSize::ThreeMax
+    );
 }
 
 #[test]
@@ -389,4 +432,37 @@ fn only_the_opponents_nodes_sampled_enough_at_the_spots_stacks_are_locked() {
     // Nothing was observed at 5 BB effective.
     let short = model.lock(Spot::three_max(5.0, 15.0, 15.0).unwrap(), Position::Bb, 1);
     assert!(!short.is_locked(Node::BtnOpen));
+}
+
+#[test]
+fn a_heads_up_spot_is_locked_on_heads_up_decisions_only() {
+    // Three-handed, the SB pushes whenever the BTN folds; heads-up, it folds.
+    let hands: Vec<_> = (0..3)
+        .flat_map(|_| {
+            [
+                HandBuilder::three_handed(START).fold(BTN).push(SB).fold(BB),
+                HandBuilder::heads_up(300, 300).fold(SB),
+            ]
+        })
+        .map(HandBuilder::build)
+        .collect();
+    let model = PopulationModel::build(&hands, Players::Opponents);
+    let heads_up = Spot::heads_up(15.0, 15.0).unwrap();
+
+    assert!(
+        model
+            .lock(heads_up.clone(), Position::Bb, 3)
+            .is_locked(Node::SbOpen)
+    );
+    assert!(
+        !model
+            .lock(heads_up.clone(), Position::Bb, 4)
+            .is_locked(Node::SbOpen)
+    );
+    let solution = solve(
+        &model.lock(heads_up, Position::Bb, 3),
+        &SolveOptions::default(),
+    );
+    let aces = solution.strategy(Node::SbOpen, class("AA")).unwrap();
+    assert_eq!(aces.frequency(Action::Push), 0.0);
 }

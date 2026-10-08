@@ -8,6 +8,10 @@ publish.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+chrono.workspace = true
+nitro-hh.workspace = true
+nitro-population.workspace = true
+nitro-solver.workspace = true
 rand.workspace = true
 rayon.workspace = true
 # rs_poker's arena does not compile without its serde feature.
