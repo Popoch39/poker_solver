@@ -102,6 +102,37 @@ fn nodes_below_the_sample_threshold_are_inconclusive_and_listed_last() {
 }
 
 #[test]
+fn limps_and_raises_short_of_all_in_are_left_out_of_the_push_fold_frequency() {
+    let btn_limp = HandBuilder::three_handed(START)
+        .hero(BTN, "7c 2d")
+        .call(BTN)
+        .fold(SB)
+        .check(BB)
+        .build();
+    let btn_min_raise = HandBuilder::three_handed(START)
+        .hero(BTN, "Kc Kd")
+        .raise_to(BTN, 40)
+        .fold(SB)
+        .fold(BB)
+        .build();
+    let only_off_tree = [btn_limp.clone(), btn_min_raise.clone()];
+    let hands = [btn_push("Ah Ad"), btn_limp, btn_min_raise];
+
+    let report = LeakReport::build(&hands, HERO, &options(1));
+
+    let [leak] = report.leaks() else {
+        panic!("{:?}", report.leaks())
+    };
+    assert_eq!(
+        (leak.node, leak.sample, leak.hero_frequency),
+        (Node::BtnOpen, 1, 1.0)
+    );
+    let report = LeakReport::build(&only_off_tree, HERO, &options(1));
+    assert_eq!(report.hands(), 2);
+    assert!(report.leaks().is_empty(), "{:?}", report.leaks());
+}
+
+#[test]
 fn only_the_hands_of_the_named_account_owner_are_read_and_no_name_is_kept() {
     let someone_else = HandBuilder::three_handed(START)
         .account_owner(BB, "Somebody", "7h 2c")

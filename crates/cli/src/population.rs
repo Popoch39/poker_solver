@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use nitro_hh::parse_paths;
-use nitro_population::{Node, OffTreeAction, Players, PopulationModel, Position};
+use nitro_population::{
+    Action, Node, NodeStats, OffTreeAction, Players, PopulationModel, Position,
+};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -46,13 +48,15 @@ fn print_model(model: &PopulationModel, errors: usize) {
     );
     crate::hh::print_skipped(errors);
     println!("Decisions of every player but the account owner of the histories.");
+    println!(
+        "First in (BTN or SB open), every action: a min-raise is to 2 BB, a raise more, short of all-in."
+    );
     println!();
     for (node, bucket, stats) in model.entries() {
         let action = node.aggressive_action();
         println!(
-            "{node}, {bucket}: {action} {:.1}% on {} ({} shown)",
-            100.0 * stats.frequency(action),
-            stats.sample(),
+            "{node}, {bucket}: {}; {} {action} shown",
+            distribution(stats),
             stats.known_hands(action).total()
         );
     }
@@ -71,6 +75,29 @@ fn print_model(model: &PopulationModel, errors: usize) {
         off_tree.later_preflop(),
         off_tree.postflop()
     );
+}
+
+/// Every action counted at a node with its share of the decisions, then the
+/// sample: `fold 50.0%, limp 20.0%, min-raise 5.0%, raise 3.0%, push 22.0%
+/// on 1000`.
+pub fn distribution(stats: &NodeStats) -> String {
+    let mut shares: Vec<String> = stats
+        .actions()
+        .iter()
+        .map(|&action| {
+            let label = match action {
+                Action::Raise => "min-raise".to_owned(),
+                _ => action.to_string(),
+            };
+            format!("{label} {:.1}%", 100.0 * stats.frequency(action))
+        })
+        .collect();
+    if stats.actions().contains(&Action::Raise) {
+        let raises = f64::from(stats.other_raises()) / f64::from(stats.sample());
+        // Raises above the min-raise sit between it and the push.
+        shares.insert(shares.len() - 1, format!("raise {:.1}%", 100.0 * raises));
+    }
+    format!("{} on {}", shares.join(", "), stats.sample())
 }
 
 const OFF_TREE_ACTIONS: [OffTreeAction; 4] = [

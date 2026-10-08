@@ -36,12 +36,14 @@ impl Default for LeakOptions {
 /// equilibrium.
 ///
 /// Frequencies are those of the node's push (or call):
-/// push / (push + fold).
+/// push / (push + fold). The equilibrium is that of the push/fold tree, so
+/// the hero's limps and raises short of all-in are left out: it has no EV
+/// to price them with.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Leak {
     pub node: Node,
     pub bucket: StackBucket,
-    /// Number of the hero's decisions at the node.
+    /// Number of the hero's push/fold decisions at the node.
     pub sample: u32,
     pub hero_frequency: f64,
     /// Effective stack, in BB, of the spot solved for the bucket: every
@@ -111,8 +113,12 @@ impl LeakReport {
         for (big_blind, group) in by_big_blind {
             let model = PopulationModel::build(group, Players::Hero);
             for (node, bucket, stats) in model.entries() {
+                let push_fold: u32 = node.actions().iter().map(|&a| stats.count(a)).sum();
+                if push_fold == 0 {
+                    continue;
+                }
                 let tally = tallies.entry((node, bucket)).or_default();
-                tally.sample += stats.sample();
+                tally.sample += push_fold;
                 tally.aggressive += stats.count(node.aggressive_action());
                 for (i, &action) in node.actions().iter().enumerate() {
                     let known = stats.known_hands(action);

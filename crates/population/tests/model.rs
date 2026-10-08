@@ -226,8 +226,9 @@ fn limps_min_raises_and_postflop_play_are_counted_apart_from_the_tree() {
     assert_eq!(model.hands(), 4);
     assert_eq!(model.hands_in_tree(), 1);
     assert_eq!(model.hands_off_tree(), 3);
-    assert_eq!(at_start(&model, Node::BtnOpen), (1, 2));
-    assert!(model.get(Node::SbOpen, StackBucket::of(15.0)).is_none());
+    // First in, a limp or a raise also counts at its node, as its own action.
+    assert_eq!(at_start(&model, Node::BtnOpen), (1, 4));
+    assert_eq!(at_start(&model, Node::SbOpen), (0, 1));
 
     let off_tree = model.off_tree();
     assert_eq!(off_tree.count(Position::Sb, OffTreeAction::Limp), 1);
@@ -237,6 +238,66 @@ fn limps_min_raises_and_postflop_play_are_counted_apart_from_the_tree() {
     // The BB's check, then the fold and call and the two folds after a raise.
     assert_eq!(off_tree.later_preflop(), 5);
     assert_eq!(off_tree.postflop(), 2);
+}
+
+/// Five BTN decisions at 15 BB, one of each first-in action: push, fold,
+/// limp, min-raise, raise to 3 BB.
+fn first_in_model() -> PopulationModel {
+    let hands = [
+        HandBuilder::three_handed(START).push(BTN).fold(SB).fold(BB),
+        HandBuilder::three_handed(START).fold(BTN).fold(SB),
+        HandBuilder::three_handed(START)
+            .call(BTN)
+            .fold(SB)
+            .check(BB),
+        HandBuilder::three_handed(START)
+            .raise_to(BTN, 40)
+            .fold(SB)
+            .fold(BB),
+        HandBuilder::three_handed(START)
+            .raise_to(BTN, 60)
+            .fold(SB)
+            .fold(BB),
+    ]
+    .map(HandBuilder::build);
+    PopulationModel::build(&hands, Players::Opponents)
+}
+
+#[test]
+fn an_opening_node_has_the_unconditional_frequency_of_every_first_in_action() {
+    let model = first_in_model();
+
+    let stats = model
+        .get_at(Node::BtnOpen, StackBucket::of(15.0), TableSize::ThreeMax)
+        .unwrap();
+    assert_eq!(
+        stats.actions(),
+        [Action::Fold, Action::Limp, Action::Raise, Action::Push]
+    );
+    assert_eq!(stats.sample(), 5);
+    for action in stats.actions() {
+        assert_eq!(stats.count(*action), 1, "{action}");
+        assert!((stats.frequency(*action) - 0.2).abs() < 1e-12, "{action}");
+    }
+    assert_eq!(stats.other_raises(), 1);
+    // A node facing a push has no first-in action.
+    let facing = model.get(Node::BbVsBtnPush, StackBucket::of(15.0)).unwrap();
+    assert_eq!(facing.actions(), [Action::Fold, Action::Call]);
+    assert_eq!(facing.other_raises(), 0);
+}
+
+#[test]
+fn locked_on_the_push_fold_tree_every_first_in_decision_but_a_fold_is_a_push() {
+    let model = first_in_model();
+    let stats = model.get(Node::BtnOpen, StackBucket::of(15.0)).unwrap();
+
+    let push = |hand| stats.strategy(hand).frequency(Action::Push);
+    let combos: f64 = HandClass::all()
+        .map(|hand| f64::from(hand.combos()) * push(hand))
+        .sum();
+    assert!((combos / 1326.0 - 0.8).abs() < 1e-12, "{combos}");
+    assert_eq!(push(class("72o")), 0.0);
+    assert_eq!(push(class("AA")), 1.0);
 }
 
 #[test]

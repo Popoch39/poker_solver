@@ -180,10 +180,30 @@ impl PopulationModel {
                         .record(choice, cards);
                 }
                 Some(Step::Decision(..)) => {}
-                Some(Step::LeftTree(kind)) => {
+                Some(Step::LeftTree(node, kind)) => {
                     left_tree = true;
-                    if included {
-                        *self.off_tree.left.entry((position, kind)).or_default() += 1;
+                    if !included {
+                        continue;
+                    }
+                    *self.off_tree.left.entry((position, kind)).or_default() += 1;
+                    // First in, the action also counts at its node.
+                    let first_in = matches!(node, Some(Node::BtnOpen | Node::SbOpen));
+                    if let Some(node) = node.filter(|_| first_in && kind != OffTreeAction::Other) {
+                        let cards = cards(hand, action.seat);
+                        for stats in [
+                            self.nodes
+                                .entry((node, bucket))
+                                .or_insert_with(|| NodeStats::new(node)),
+                            self.by_table
+                                .entry((node, bucket, size))
+                                .or_insert_with(|| NodeStats::new(node)),
+                        ] {
+                            match kind {
+                                OffTreeAction::Limp => stats.record(Action::Limp, cards),
+                                OffTreeAction::MinRaise => stats.record(Action::Raise, cards),
+                                _ => stats.record_other_raise(),
+                            }
+                        }
                     }
                 }
             }
@@ -323,7 +343,8 @@ impl Table {
 /// One preflop action, placed in the push/fold tree.
 enum Step {
     Decision(Node, Action),
-    LeftTree(OffTreeAction),
+    /// The action left the tree, from the node it was taken at, if any.
+    LeftTree(Option<Node>, OffTreeAction),
 }
 
 /// Follows a hand's preflop actions down the push/fold tree.
@@ -362,8 +383,9 @@ impl<'a> Walk<'a> {
             ActionKind::Fold | ActionKind::Check => self.committed[i],
         };
         let Some(node) = self.node(position) else {
-            return Some(Step::LeftTree(OffTreeAction::Other));
+            return Some(Step::LeftTree(None, OffTreeAction::Other));
         };
+        let left = |kind| Some(Step::LeftTree(Some(node), kind));
         // A raise, or a call of a short blind, that puts every opponent
         // all-in is a push: the tree's all-in is for the effective stack.
         let covers = all_in || self.covers(position, total);
@@ -375,14 +397,12 @@ impl<'a> Walk<'a> {
             ActionKind::Call(_) | ActionKind::Check if facing_push => Action::Call,
             ActionKind::Raise { .. } if facing_push && covers => Action::Call,
             ActionKind::Call(_) | ActionKind::Raise { .. } if covers => Action::Push,
-            ActionKind::Call(_) if !facing_push => {
-                return Some(Step::LeftTree(OffTreeAction::Limp));
-            }
+            ActionKind::Call(_) if !facing_push => return left(OffTreeAction::Limp),
             ActionKind::Raise { to } if !facing_push && to == 2 * self.big_blind => {
-                return Some(Step::LeftTree(OffTreeAction::MinRaise));
+                return left(OffTreeAction::MinRaise);
             }
-            ActionKind::Raise { .. } => return Some(Step::LeftTree(OffTreeAction::Raise)),
-            _ => return Some(Step::LeftTree(OffTreeAction::Other)),
+            ActionKind::Raise { .. } => return left(OffTreeAction::Raise),
+            _ => return left(OffTreeAction::Other),
         };
         self.committed[i] = total;
         if action == Action::Fold {
