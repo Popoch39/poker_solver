@@ -9,6 +9,7 @@ mod hh;
 mod leaks;
 mod population;
 mod simulate;
+mod versus;
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -78,6 +79,10 @@ enum Command {
     /// hero's: equilibrium and exploit ranges side by side, with the gain
     /// against the population and the cost against the equilibrium.
     Exploit(exploit::Args),
+    /// Play many Expresso Nitro, the solver's hero against two population
+    /// bots: the equilibrium and the exploit compared on the same games,
+    /// with win rate, ROI after rake and the break-even verdict.
+    Versus(versus::Args),
 }
 
 fn main() -> ExitCode {
@@ -95,6 +100,7 @@ fn main() -> ExitCode {
         Command::Population(args) => population::run(&args),
         Command::Leaks(args) => leaks::run(&args),
         Command::Exploit(args) => exploit::run(&args),
+        Command::Versus(args) => versus::run(&args),
     }
 }
 

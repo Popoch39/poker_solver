@@ -99,9 +99,8 @@ impl SolverHero {
                 Some((population, min_sample)) => population.lock(spot, hero, *min_sample),
                 None => spot,
             };
-            let start = Instant::now();
-            let solution = solve_apart(&spot, &self.options);
-            *lock(&self.solving) += start.elapsed();
+            let (solution, took) = solve_apart(&spot, &self.options);
+            *lock(&self.solving) += took;
             Arc::new(solution)
         }))
     }
@@ -171,14 +170,15 @@ fn round(bb: f64) -> f64 {
     ((bb / step).round() * step).max(0.25)
 }
 
-/// Solves in the solver's own pool, one solve at a time.
+/// Solves in the solver's own pool, one solve at a time, and says how long
+/// the solve took once its turn came.
 ///
 /// Waiting for a solve from a thread of the simulation's rayon pool would
 /// let that thread run other games meanwhile, one of which could wait on
 /// the very solve it is nested in. A plain thread waits without that. One
 /// solve at a time, for the solver itself fills its tables lazily from its
 /// own rayon tasks.
-fn solve_apart(spot: &Spot, options: &SolveOptions) -> Solution {
+fn solve_apart(spot: &Spot, options: &SolveOptions) -> (Solution, Duration) {
     static POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
     static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
     let pool = POOL.get_or_init(|| {
@@ -191,7 +191,9 @@ fn solve_apart(spot: &Spot, options: &SolveOptions) -> Solution {
         scope
             .spawn(|| {
                 let _turn = lock(&ONE_AT_A_TIME);
-                pool.install(|| solve(spot, options))
+                let start = Instant::now();
+                let solution = pool.install(|| solve(spot, options));
+                (solution, start.elapsed())
             })
             .join()
             .expect("the solver does not panic")
