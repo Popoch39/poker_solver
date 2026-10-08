@@ -33,7 +33,8 @@
 //! ext-image-copy-capture on the client's foreign toplevel. wlr-screencopy
 //! only captures outputs or screen regions, which would also catch any
 //! window lying over the table; a per-window capture holds the client's
-//! pixels only. The frame is read only at the client's size, so the window
+//! pixels only (ADR 0009, which records this departure from the spec's
+//! wlr-screencopy). The frame is read only at the client's size, so the window
 //! must float unscaled on a scale-1 monitor, fully opaque: see the
 //! Hyprland rules in [`nitro_local_client`].
 //!
