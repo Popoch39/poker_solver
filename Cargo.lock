@@ -1014,6 +1014,7 @@ dependencies = [
  "clap",
  "nitro-local-client",
  "nitro-simulator",
+ "nitro-solver",
  "rand",
  "serde",
  "serde_json",

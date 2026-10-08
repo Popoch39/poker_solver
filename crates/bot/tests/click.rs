@@ -206,6 +206,19 @@ fn the_game_is_over_for_the_bot_once_the_hero_is_out() {
 }
 
 #[test]
+fn the_game_is_over_for_the_bot_once_the_hero_has_won() {
+    let mut state = hero_may_go_all_in();
+    state.to_act = None;
+    state.legal.clear();
+    state.seats[1].place = Some(2);
+    state.seats[2].place = Some(3);
+    let (mut bot, _) = bot(TrivialBot::AlwaysAllIn, Setup::default());
+    assert_eq!(bot.turn(&state, &mut rng()), Ok(Turn::GameOver));
+    state.seats[1].place = None;
+    assert_eq!(bot.turn(&state, &mut rng()), Ok(Turn::NotToAct));
+}
+
+#[test]
 fn stops_without_clicking_when_another_window_is_focused() {
     let (mut bot, clicks) = bot(
         TrivialBot::AlwaysAllIn,

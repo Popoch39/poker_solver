@@ -138,7 +138,7 @@ fn same_window(a: &Window, b: &Window) -> bool {
 /// The button that plays `decision` among the `legal` ones, as the
 /// simulator plays a strategy's decision: a fold with nothing to call is a
 /// check, and an all-in that is not a button only calls.
-fn button(decision: Decision, legal: &[Decision]) -> Decision {
+pub(crate) fn button(decision: Decision, legal: &[Decision]) -> Decision {
     if legal.contains(&decision) {
         decision
     } else {
