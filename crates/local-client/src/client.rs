@@ -4,7 +4,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use nitro_simulator::{Decision, NitroGame, Seat, SeatStrategy, Step, Structure, TableView};
+use nitro_simulator::{
+    Decision, NitroGame, Seat, SeatStrategy, SeatView, Step, Structure, TableView,
+};
 
 use crate::layout::LAYOUT;
 use crate::render::{Frame, chips, ordinal, render};
@@ -108,6 +110,12 @@ impl LocalClient {
     /// The table as the hero sees it.
     pub fn view(&self) -> TableView {
         self.game.table_view(HERO)
+    }
+
+    /// What the simulator shows the hero while it must act: what a reader
+    /// of the table should rebuild.
+    pub fn hero_decision(&self) -> Option<&SeatView> {
+        self.game.pending_decision().filter(|v| v.seat == HERO)
     }
 
     /// The seats' names, as drawn.
